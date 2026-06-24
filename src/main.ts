@@ -1,6 +1,6 @@
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { config } from "./config";
+import { modelConfig } from "./model-config";
 import { startFaceTracking } from "./face-tracking";
 import { setupExpressions } from "./expressions";
 import { setupPhysics } from "./physics";
@@ -18,11 +18,11 @@ const app = new PIXI.Application({
 	antialias: true,
 });
 
-const model = await Live2DModel.from(config.modelDir + config.modelFile);
+const model = await Live2DModel.from(modelConfig.dir + modelConfig.file);
 app.stage.addChild(model);
 model.anchor.set(0.5, 0.5);
 model.position.set(app.screen.width / 2, app.screen.height / 2);
-model.scale.set(config.scale);
+model.scale.set(modelConfig.scale);
 
 globalThis.__model = model; // pokeable from the webview devtools
 

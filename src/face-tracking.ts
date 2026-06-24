@@ -1,6 +1,7 @@
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import { config } from "./config";
+import { modelConfig } from "./model-config";
 
 // The Live2D parameters we drive from the webcam.
 interface Rig {
@@ -139,8 +140,8 @@ function driveModel(model: Live2DModel, rig: Rig, target: Rig): void {
 	const group = (pred: (id: string) => boolean) =>
 		ids.map((id, index) => ({ id, def: cm.getParameterDefaultValue(index) }))
 			.filter((p) => pred(p.id));
-	const hair = group((id) => id.startsWith("ParamHair"));
-	const clothes = group((id) => id.startsWith("Param_Angle_Rotation"));
+	const hair = group((id) => id.startsWith(modelConfig.hair.prefix));
+	const clothes = group((id) => id.startsWith(modelConfig.clothes.prefix));
 
 	// Scale a group's deviation from rest by `gain` (no-op at 1).
 	const swing = (params: { id: string; def: number }[], gain: number) => {
@@ -161,8 +162,8 @@ function driveModel(model: Live2DModel, rig: Rig, target: Rig): void {
 		set("ParamBodyAngleZ", rig.angleZ * f);
 		set("ParamBodyAngleZ2", rig.angleZ * f);
 
-		swing(hair, config.hairGain);
-		swing(clothes, config.clothesGain);
+		swing(hair, modelConfig.hair.gain);
+		swing(clothes, modelConfig.clothes.gain);
 	});
 }
 

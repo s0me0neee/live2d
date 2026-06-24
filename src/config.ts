@@ -1,28 +1,20 @@
 /**
- * Central tuning + performance knobs for the app.
- * Tweak these instead of hunting through the modules.
+ * Model-INDEPENDENT tuning + performance knobs. These drive Cubism-standard
+ * parameters / the generic physics + breath runtime, so they work on any
+ * Cubism 4 model unchanged. Per-model settings (files, scale, hair/cloth param
+ * names) live in model-config.ts.
  */
 export const config = {
-	// --- model assets ---
-	modelDir: "/model/ariu/",
-	modelFile: "ariu.model3.json",
-	scale: 0.2,
-
 	// --- feel / mirroring ---
 	mirror: true, // model reflects you like a mirror; flip if it feels backwards
 	smoothing: 0.6, // 0..1 per render frame, higher = snappier head/eyes
 
-	// --- head ---
+	// --- head (ParamAngleX/Y/Z) ---
 	headGain: 1.5, // model rotation per degree of head turn
 	headClampDeg: 90, // max |head angle|
 
-	// --- body (derived from the head pose) ---
+	// --- body (ParamBodyAngle*, derived from the head pose) ---
 	bodyFollow: 1 / 3, // body lean as a fraction of head angle
-
-	// --- secondary physics (driven by your head motion, scaled around rest) ---
-	// 1 = model default, >1 = swingier, <1 = stiffer.
-	hairGain: 1.7, // ParamHair* swing
-	clothesGain: 2, // skirt/coat cloth sway (Param_Angle_Rotation_*)
 
 	// --- idle "breathing" (built-in natural sway, applied at load) ---
 	// Scales the breath sine added to head angle + ParamBreath (which feeds the
@@ -45,7 +37,7 @@ export const config = {
 		springiness: 1.02,
 	},
 
-	// --- eyes / mouth ---
+	// --- eyes / mouth (ParamEye*, ParamMouth*) ---
 	blinkGain: 1.4, // how easily a blink fully closes
 	jaw: { deadzone: 0.004, curve: 0.23, gain: 1.1 }, // smooth speech-visible mouth
 

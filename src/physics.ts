@@ -42,11 +42,12 @@ export function setupPhysics(model: Live2DModel): void {
 	wind.x = p.wind.x;
 	wind.y = p.wind.y;
 
-	if (p.gust !== 0) {
+	const gust: number = p.gust;
+	if (gust !== 0) {
 		const start = performance.now();
 		const animate = () => {
 			const t = (performance.now() - start) / 1000;
-			wind.x = p.wind.x + Math.sin(t * p.gustHz * Math.PI * 2) * p.gust;
+			wind.x = p.wind.x + Math.sin(t * p.gustHz * Math.PI * 2) * gust;
 			requestAnimationFrame(animate);
 		};
 		requestAnimationFrame(animate);

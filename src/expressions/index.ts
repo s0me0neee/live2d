@@ -1,5 +1,5 @@
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { config } from "../config";
+import { modelConfig } from "../model-config";
 import { expressions, type ExpressionBinding } from "./generated";
 
 interface ExpParam {
@@ -23,7 +23,7 @@ interface LoadedExpression extends ExpressionBinding {
 export async function setupExpressions(model: Live2DModel): Promise<void> {
 	const defs: LoadedExpression[] = await Promise.all(
 		expressions.map(async (e) => {
-			const data = await fetch(config.modelDir + e.file).then((r) => r.json());
+			const data = await fetch(modelConfig.dir + e.file).then((r) => r.json());
 			return { ...e, params: (data.Parameters ?? []) as ExpParam[] };
 		}),
 	);
