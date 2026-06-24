@@ -1,0 +1,13 @@
+#fps {
+	position: fixed;
+	top: 8px;
+	left: 8px;
+	z-index: 10;
+	padding: 2px 6px;
+	font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+	color: #0f0;
+	background: rgba(0, 0, 0, 0.5);
+	border-radius: 4px;
+	pointer-events: none; /* never intercept clicks meant for the model */
+	user-select: none;
+}
