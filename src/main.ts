@@ -1,6 +1,9 @@
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
+import { config } from "./config";
 import { startFaceTracking } from "./face-tracking";
+import { setupExpressions } from "./expressions";
+import { mountFps } from "./fps";
 
 // expose PIXI so pixi-live2d-display can auto-register its ticker/interaction
 window.PIXI = PIXI;
@@ -9,32 +12,21 @@ const app = new PIXI.Application({
 	view: document.getElementById("live2d") as HTMLCanvasElement,
 	resizeTo: window,
 	backgroundAlpha: 0, // transparent canvas (handy for an overlay window later)
-	resolution: window.devicePixelRatio || 1, // render at native pixel density (sharp on Retina/HiDPI)
-	autoDensity: true, // keep CSS size correct while backing store is scaled up
+	resolution: window.devicePixelRatio || 1, // native pixel density (sharp on Retina)
+	autoDensity: true, // keep CSS size correct while the backing store scales up
 	antialias: true,
 });
 
-const model = await Live2DModel.from("/model/ariu/ariu.model3.json");
+const model = await Live2DModel.from(config.modelDir + config.modelFile);
 app.stage.addChild(model);
-
 model.anchor.set(0.5, 0.5);
 model.position.set(app.screen.width / 2, app.screen.height / 2);
-model.scale.set(0.2);
+model.scale.set(config.scale);
 
-globalThis.__model = model;
+globalThis.__model = model; // pokeable from the webview devtools
 
-// webcam face tracking — keep running even if the camera is denied/unavailable
-startFaceTracking(model).catch((err) => {
-	console.warn("Face tracking disabled:", err);
-});
+mountFps(app);
 
-const fpsEl = document.getElementById("fps")!;
-
-let acc = 0;
-app.ticker.add(() => {
-	acc += app.ticker.deltaMS;
-	if (acc >= 250) {
-		fpsEl.textContent = `${Math.round(app.ticker.FPS)} FPS`;
-		acc = 0;
-	}
-});
+// Both features keep the app running if they fail (e.g. camera denied).
+startFaceTracking(model).catch((err) => console.warn("Face tracking disabled:", err));
+setupExpressions(model).catch((err) => console.warn("Expressions disabled:", err));

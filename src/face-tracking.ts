@@ -1,25 +1,6 @@
-import { FaceLandmarker, PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-
-// Set true so the model mirrors you (like looking in a mirror). Flip if it
-// feels backwards. Head-angle/eye signs below also depend on this.
-const MIRROR = true;
-
-// Per-frame smoothing toward the latest detected values (0..1, higher = snappier).
-const SMOOTHING = 0.5;
-
-// Camera sensitivity: model rotation per degree of head movement (higher = more).
-const HEAD_GAIN = 1.5;
-
-// Body capture (from shoulders via PoseLandmarker). Gains map normalized pose
-// measurements to the model's ParamBodyAngle* range (roughly -10..10).
-const BODY_ROLL_GAIN = 1.4; // shoulder tilt -> body roll (ParamBodyAngleZ)
-const BODY_LEAN_GAIN = 45; // horizontal shoulder shift -> body lean (ParamBodyAngleX)
-const BODY_RISE_GAIN = 40; // vertical shoulder shift -> body pitch (ParamBodyAngleY)
-
-// Resting shoulder position, captured once, so lean/rise are measured relative
-// to where you sit (no hard-coded "center" assumption).
-let poseBaseline: { x: number; y: number } | null = null;
+import { config } from "./config";
 
 // The Live2D parameters we drive from the webcam.
 interface Rig {
@@ -34,9 +15,6 @@ interface Rig {
 	mouthForm: number; // 0..1 (smile)
 	browLY: number; // -1..1
 	browRY: number; // -1..1
-	bodyAngleX: number; // body lean L/R   (-10..10), from shoulders
-	bodyAngleY: number; // body rise/sink   (-10..10), from shoulders
-	bodyAngleZ: number; // body roll/tilt   (-10..10), from shoulders
 }
 
 const neutral = (): Rig => ({
@@ -45,8 +23,10 @@ const neutral = (): Rig => ({
 	eyeBallX: 0, eyeBallY: 0,
 	mouthOpen: 0, mouthForm: 0,
 	browLY: 0, browRY: 0,
-	bodyAngleX: 0, bodyAngleY: 0, bodyAngleZ: 0,
 });
+
+// Precomputed once so the per-frame smoothing loop allocates nothing.
+const RIG_KEYS = Object.keys(neutral()) as (keyof Rig)[];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -56,7 +36,18 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * denied/unavailable so the caller can keep the app running without tracking).
  */
 export async function startFaceTracking(model: Live2DModel): Promise<void> {
-	// --- webcam into a hidden <video> ---
+	const video = await openCamera();
+	const landmarker = await createLandmarker();
+
+	const target = neutral(); // latest detection
+	const rig = neutral(); // smoothed values actually applied
+
+	startDetectionLoop(video, landmarker, target);
+	driveModel(model, rig, target);
+}
+
+/** Opens the user-facing camera into a hidden, playing <video>. */
+async function openCamera(): Promise<HTMLVideoElement> {
 	const video = document.createElement("video");
 	video.autoplay = true;
 	video.playsInline = true;
@@ -64,16 +55,18 @@ export async function startFaceTracking(model: Live2DModel): Promise<void> {
 	video.style.display = "none";
 	document.body.appendChild(video);
 
-	const stream = await navigator.mediaDevices.getUserMedia({
-		video: { width: 640, height: 480, facingMode: "user" },
+	video.srcObject = await navigator.mediaDevices.getUserMedia({
+		video: { ...config.camera, facingMode: "user" },
 		audio: false,
 	});
-	video.srcObject = stream;
 	await video.play();
+	return video;
+}
 
-	// --- MediaPipe Face Landmarker (assets vendored under /public/mediapipe) ---
+/** Creates the MediaPipe Face Landmarker (assets vendored under /public). */
+async function createLandmarker(): Promise<FaceLandmarker> {
 	const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-	const landmarker = await FaceLandmarker.createFromOptions(fileset, {
+	return FaceLandmarker.createFromOptions(fileset, {
 		baseOptions: {
 			modelAssetPath: "/mediapipe/face_landmarker.task",
 			delegate: "GPU",
@@ -83,53 +76,49 @@ export async function startFaceTracking(model: Live2DModel): Promise<void> {
 		outputFaceBlendshapes: true,
 		outputFacialTransformationMatrixes: true,
 	});
+}
 
-	// --- MediaPipe Pose Landmarker: tracks shoulders/torso for real body motion ---
-	const poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
-		baseOptions: {
-			modelAssetPath: "/mediapipe/pose_landmarker_lite.task",
-			delegate: "GPU",
-		},
-		runningMode: "VIDEO",
-		numPoses: 1,
-	});
-
-	const target = neutral(); // latest detection
-	const rig = neutral(); // smoothed values actually applied
-
-	// --- detection loop (decoupled from the render loop) ---
+/**
+ * Runs inference at most `config.detectFps` times a second (it's the dominant
+ * cost), independent of the render loop, writing into `target`.
+ */
+function startDetectionLoop(
+	video: HTMLVideoElement,
+	landmarker: FaceLandmarker,
+	target: Rig,
+): void {
+	const minInterval = 1000 / config.detectFps;
+	let lastDetect = 0;
 	let lastVideoTime = -1;
-	const detect = () => {
-		if (video.currentTime !== lastVideoTime) {
-			lastVideoTime = video.currentTime;
-			const now = performance.now();
-			const res = landmarker.detectForVideo(video, now);
-			if (res.faceBlendshapes?.length) {
-				mapResult(res, target);
-			}
-			const pose = poseLandmarker.detectForVideo(video, now);
-			if (pose.landmarks?.length) {
-				mapPose(pose, target);
-			}
-		}
+
+	const detect = (now: number) => {
 		requestAnimationFrame(detect);
+		// throttle to the target rate, and skip if the frame hasn't advanced
+		if (now - lastDetect < minInterval || video.currentTime === lastVideoTime) return;
+		lastDetect = now;
+		lastVideoTime = video.currentTime;
+
+		const res = landmarker.detectForVideo(video, now);
+		if (res.faceBlendshapes?.length) mapResult(res, target);
 	};
 	requestAnimationFrame(detect);
+}
 
-	// --- push values into the model ---
+/**
+ * Hooks the model's update so it smooths toward `target` and writes parameters.
+ * - face params on "afterMotionUpdate" (so the hair/cloth physics reacts to them)
+ * - body params on "beforeModelUpdate" (after physics, which would clobber them)
+ */
+function driveModel(model: Live2DModel, rig: Rig, target: Rig): void {
 	const internal = model.internalModel as any;
+	const cm = internal.coreModel;
 	internal.eyeBlink = undefined; // we drive the eyes ourselves
-	(model as any).automator.autoFocus = false; // stop hair/clothes following the mouse
+	(model as any).automator.autoFocus = false; // stop following the mouse
 
-	// "afterMotionUpdate" fires BEFORE physics is evaluated, so the hair/cloth
-	// physics reacts to our face values too (not just the visible head deform).
+	const set = (id: string, v: number) => cm.setParameterValueById(id, v);
+
 	internal.on("afterMotionUpdate", () => {
-		// smooth toward the target each render frame
-		for (const k of Object.keys(rig) as (keyof Rig)[]) {
-			rig[k] += (target[k] - rig[k]) * SMOOTHING;
-		}
-		const cm = internal.coreModel;
-		const set = (id: string, v: number) => cm.setParameterValueById(id, v);
+		for (const k of RIG_KEYS) rig[k] += (target[k] - rig[k]) * config.smoothing;
 
 		set("ParamAngleX", rig.angleX);
 		set("ParamAngleY", rig.angleY);
@@ -142,33 +131,43 @@ export async function startFaceTracking(model: Live2DModel): Promise<void> {
 		set("ParamMouthForm", rig.mouthForm);
 		set("ParamBrowLY", rig.browLY);
 		set("ParamBrowRY", rig.browRY);
-		// NOTE: ParamBodyAngle* are physics OUTPUTS (driven by head angle in
-		// ariu.physics3.json), so writing them here is pointless — physics, which
-		// runs after this hook, overwrites them. We override them post-physics in
-		// the beforeModelUpdate handler below instead.
 	});
 
-	// --- drive body angles from the POSE capture (shoulders), not the head ---
+	// Hair params are physics OUTPUTS; collect them (with rest values) so we can
+	// scale their swing after physics has run.
+	const hair = (cm._model.parameters.ids as string[])
+		.map((id, index) => ({ id, def: cm.getParameterDefaultValue(index) }))
+		.filter((p) => p.id.startsWith("ParamHair"));
+
 	// ParamBodyAngle* are physics OUTPUTS (driven by head angle in
 	// ariu.physics3.json); this hook runs AFTER physics, so our values win.
 	// ParamBodyAngleZ2 is the rig's counter-rotation term — match its sign too.
+	const f = config.bodyFollow;
+	const hairGain = config.hairGain;
 	internal.on("beforeModelUpdate", () => {
-		const cm = internal.coreModel;
-		cm.setParameterValueById("ParamBodyAngleX", rig.bodyAngleX);
-		cm.setParameterValueById("ParamBodyAngleY", rig.bodyAngleY);
-		cm.setParameterValueById("ParamBodyAngleZ", rig.bodyAngleZ);
-		cm.setParameterValueById("ParamBodyAngleZ2", rig.bodyAngleZ);
+		set("ParamBodyAngleX", rig.angleX * f);
+		set("ParamBodyAngleY", rig.angleY * f);
+		set("ParamBodyAngleZ", rig.angleZ * f);
+		set("ParamBodyAngleZ2", rig.angleZ * f);
+
+		// exaggerate/dampen the hair swing around its rest position
+		if (hairGain !== 1) {
+			for (const h of hair) {
+				const cur = cm.getParameterValueById(h.id);
+				set(h.id, h.def + (cur - h.def) * hairGain);
+			}
+		}
 	});
 }
 
 /** Translate one MediaPipe result into Live2D-shaped rig values. */
 function mapResult(res: any, out: Rig): void {
-	// blendshapes -> name->score map
 	const bs: Record<string, number> = {};
-	for (const c of res.faceBlendshapes[0].categories) {
-		bs[c.categoryName] = c.score;
-	}
+	for (const c of res.faceBlendshapes[0].categories) bs[c.categoryName] = c.score;
 	const v = (name: string) => bs[name] ?? 0;
+
+	const { mirror, headGain, headClampDeg: lim, blinkGain, jaw: jc } = config;
+	const ms = mirror ? -1 : 1;
 
 	// --- head pose from the 4x4 facial transformation matrix (column-major) ---
 	const m: number[] | undefined = res.facialTransformationMatrixes?.[0]?.data;
@@ -178,18 +177,17 @@ function mapResult(res: any, out: Rig): void {
 		const pitch = Math.atan2(-r(1, 2), Math.hypot(r(0, 2), r(2, 2)));
 		const roll = Math.atan2(r(1, 0), r(1, 1));
 		const deg = 180 / Math.PI;
-		const ms = MIRROR ? -1 : 1;
-		out.angleX = clamp(yaw * deg * ms * HEAD_GAIN, -70, 70);
-		out.angleY = clamp(-pitch * deg * HEAD_GAIN, -70, 70); // head up -> model up
-		out.angleZ = clamp(-roll * deg * ms * HEAD_GAIN, -70, 70); // tilt head -> model tilts same way
+		out.angleX = clamp(yaw * deg * ms * headGain, -lim, lim);
+		out.angleY = clamp(-pitch * deg * headGain, -lim, lim); // head up -> model up
+		out.angleZ = clamp(-roll * deg * ms * headGain, -lim, lim); // tilt -> model tilts same way
 	}
 
 	// --- eyes (mirror-swap so it reads like a mirror) ---
 	let blinkL = v("eyeBlinkLeft");
 	let blinkR = v("eyeBlinkRight");
-	if (MIRROR) [blinkL, blinkR] = [blinkR, blinkL];
-	out.eyeLOpen = clamp(1 - blinkL * 1.2, 0, 1);
-	out.eyeROpen = clamp(1 - blinkR * 1.2, 0, 1);
+	if (mirror) [blinkL, blinkR] = [blinkR, blinkL];
+	out.eyeLOpen = clamp(1 - blinkL * blinkGain, 0, 1);
+	out.eyeROpen = clamp(1 - blinkR * blinkGain, 0, 1);
 
 	// --- gaze ---
 	const gx =
@@ -198,48 +196,15 @@ function mapResult(res: any, out: Rig): void {
 	const gy =
 		(v("eyeLookUpLeft") + v("eyeLookUpRight")) / 2 -
 		(v("eyeLookDownLeft") + v("eyeLookDownRight")) / 2;
-	out.eyeBallX = clamp(gx * (MIRROR ? -1 : 1), -1, 1);
+	out.eyeBallX = clamp(gx * ms, -1, 1);
 	out.eyeBallY = clamp(gy, -1, 1);
 
-	// --- mouth ---
-	// Lift small jaw openings so speech is visible, but smoothly: the old fixed
-	// +0.3 "baseJaw" caused a pop when jawOpen crossed the threshold. A deadzone
-	// kills closed-mouth jitter; the concave curve (pow < 1) amplifies the low
-	// end continuously, so there's no discontinuity.
-	const JAW_DEADZONE = 0.0045; // ignore sensor noise when the mouth is closed
-	const JAW_CURVE = 0.22; // lower = more low-end amplification (speech)
-	const JAW_GAIN = 1.1; // reach fully-open a bit sooner
-	const jaw = clamp((v("jawOpen") - JAW_DEADZONE) / (1 - JAW_DEADZONE), 0, 1);
-	out.mouthOpen = clamp(Math.pow(jaw, JAW_CURVE) * JAW_GAIN, 0, 1);
+	// --- mouth: deadzone kills closed-mouth jitter; concave curve lifts speech ---
+	const jaw = clamp((v("jawOpen") - jc.deadzone) / (1 - jc.deadzone), 0, 1);
+	out.mouthOpen = clamp(Math.pow(jaw, jc.curve) * jc.gain, 0, 1);
 	out.mouthForm = clamp((v("mouthSmileLeft") + v("mouthSmileRight")) / 2, 0, 1);
 
 	// --- brows ---
-	let browL = clamp(v("browInnerUp") - v("browDownLeft"), -1, 1);
-	let browR = clamp(v("browInnerUp") - v("browDownRight"), -1, 1);
-	// if (MIRROR) [browL, browR] = [browR, browL];
-	out.browLY = browL;
-	out.browRY = browR;
-}
-
-/** Translate a PoseLandmarker result (shoulders) into body-angle rig values. */
-function mapPose(pose: any, out: Rig): void {
-	const lm = pose.landmarks[0];
-	const L = lm[11]; // left shoulder
-	const R = lm[12]; // right shoulder
-	// Skip if the shoulders aren't confidently visible (e.g. out of frame).
-	if ((L.visibility ?? 1) < 0.5 || (R.visibility ?? 1) < 0.5) return;
-
-	const deg = 180 / Math.PI;
-	const ms = MIRROR ? -1 : 1;
-
-	// roll: tilt of the shoulder line from horizontal (level shoulders -> 0)
-	const rollDeg = Math.atan2(L.y - R.y, L.x - R.x) * deg;
-	out.bodyAngleZ = clamp(rollDeg * BODY_ROLL_GAIN * ms, -10, 10);
-
-	// lean / rise: shoulder midpoint shift from the resting baseline (y is down)
-	const midX = (L.x + R.x) / 2;
-	const midY = (L.y + R.y) / 2;
-	if (!poseBaseline) poseBaseline = { x: midX, y: midY };
-	out.bodyAngleX = clamp((midX - poseBaseline.x) * BODY_LEAN_GAIN * ms, -10, 10);
-	out.bodyAngleY = clamp((poseBaseline.y - midY) * BODY_RISE_GAIN, -10, 10);
+	out.browLY = clamp(v("browInnerUp") - v("browDownLeft"), -1, 1);
+	out.browRY = clamp(v("browInnerUp") - v("browDownRight"), -1, 1);
 }

@@ -11,3 +11,35 @@
 	pointer-events: none; /* never intercept clicks meant for the model */
 	user-select: none;
 }
+
+#expr-panel {
+	position: fixed;
+	top: 8px;
+	right: 8px;
+	z-index: 10;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-height: 90vh;
+	overflow-y: auto;
+	padding: 8px 10px;
+	font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+	color: #eee;
+	background: rgba(0, 0, 0, 0.55);
+	border-radius: 6px;
+	user-select: none;
+}
+
+#expr-panel .expr-title {
+	font-weight: bold;
+	margin-bottom: 4px;
+	opacity: 0.8;
+}
+
+#expr-panel label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+}
+
