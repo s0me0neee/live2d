@@ -133,30 +133,36 @@ function driveModel(model: Live2DModel, rig: Rig, target: Rig): void {
 		set("ParamBrowRY", rig.browRY);
 	});
 
-	// Hair params are physics OUTPUTS; collect them (with rest values) so we can
-	// scale their swing after physics has run.
-	const hair = (cm._model.parameters.ids as string[])
-		.map((id, index) => ({ id, def: cm.getParameterDefaultValue(index) }))
-		.filter((p) => p.id.startsWith("ParamHair"));
+	// Hair and cloth params are physics OUTPUTS; collect each group (with rest
+	// values) so we can scale their swing around rest after physics has run.
+	const ids = cm._model.parameters.ids as string[];
+	const group = (pred: (id: string) => boolean) =>
+		ids.map((id, index) => ({ id, def: cm.getParameterDefaultValue(index) }))
+			.filter((p) => pred(p.id));
+	const hair = group((id) => id.startsWith("ParamHair"));
+	const clothes = group((id) => id.startsWith("Param_Angle_Rotation"));
+
+	// Scale a group's deviation from rest by `gain` (no-op at 1).
+	const swing = (params: { id: string; def: number }[], gain: number) => {
+		if (gain === 1) return;
+		for (const p of params) {
+			const cur = cm.getParameterValueById(p.id);
+			set(p.id, p.def + (cur - p.def) * gain);
+		}
+	};
 
 	// ParamBodyAngle* are physics OUTPUTS (driven by head angle in
 	// ariu.physics3.json); this hook runs AFTER physics, so our values win.
 	// ParamBodyAngleZ2 is the rig's counter-rotation term — match its sign too.
 	const f = config.bodyFollow;
-	const hairGain = config.hairGain;
 	internal.on("beforeModelUpdate", () => {
 		set("ParamBodyAngleX", rig.angleX * f);
 		set("ParamBodyAngleY", rig.angleY * f);
 		set("ParamBodyAngleZ", rig.angleZ * f);
 		set("ParamBodyAngleZ2", rig.angleZ * f);
 
-		// exaggerate/dampen the hair swing around its rest position
-		if (hairGain !== 1) {
-			for (const h of hair) {
-				const cur = cm.getParameterValueById(h.id);
-				set(h.id, h.def + (cur - h.def) * hairGain);
-			}
-		}
+		swing(hair, config.hairGain);
+		swing(clothes, config.clothesGain);
 	});
 }
 
