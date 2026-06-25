@@ -14,6 +14,7 @@ const app = new PIXI.Application({
 	view: document.getElementById("live2d") as HTMLCanvasElement,
 	resizeTo: window,
 	backgroundAlpha: 0, // transparent canvas (handy for an overlay window later)
+	clearBeforeRender: true, // wipe the canvas each frame so a moving model leaves no trail
 	resolution: window.devicePixelRatio || 1, // native pixel density (sharp on Retina)
 	autoDensity: true, // keep CSS size correct while the backing store scales up
 	antialias: true,

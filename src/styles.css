@@ -1,3 +1,18 @@
+/* Overlay window: the webview paints opaque white by default, which would
+   hide the transparent Tauri window. Clear it so the desktop shows through;
+   the model's canvas is already transparent (backgroundAlpha: 0). */
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	overflow: hidden;
+}
+
+#live2d {
+	display: block;
+}
+
 #fps {
 	position: fixed;
 	top: 8px;
