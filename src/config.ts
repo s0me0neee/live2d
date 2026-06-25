@@ -7,7 +7,7 @@
 export const config = {
 	// --- feel / mirroring ---
 	mirror: true, // model reflects you like a mirror; flip if it feels backwards
-	smoothing: 0.6, // 0..1 per render frame, higher = snappier head/eyes
+	smoothing: 0.55, // 0..1 per render frame, higher = snappier head/eyes
 
 	// --- head (ParamAngleX/Y/Z) ---
 	headGain: 1.5, // model rotation per degree of head turn
@@ -38,12 +38,12 @@ export const config = {
 	},
 
 	// --- eyes / mouth (ParamEye*, ParamMouth*) ---
-	blinkGain: 1.4, // how easily a blink fully closes
-	jaw: { deadzone: 0.0045, curve: 0.24, gain: 1 }, // smooth speech-visible mouth
+	blinkGain: 1.2, // how easily a blink fully closes
+	jaw: { deadzone: 0.004, curve: 0.22, gain: 1 }, // smooth speech-visible mouth
 
 	// --- performance ---
 	// Cap MediaPipe inference rate (its cost dominates). The render/smoothing
 	// still runs at full refresh, so lowering this stays smooth but less snappy.
 	detectFps: 60,
-	camera: { width: 640, height: 480 },
+	camera: { width: 1080, height: 960 },
 } as const;

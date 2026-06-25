@@ -42,21 +42,3 @@ await setupInteraction(app, model);
 // Both features keep the app running if they fail (e.g. camera denied).
 startFaceTracking(model).catch((err) => console.warn("Face tracking disabled:", err));
 setupExpressions(model).catch((err) => console.warn("Expressions disabled:", err));
-
-// --- High-FPS render loop ---------------------------------------------------
-// webkit2gtk caps requestAnimationFrame at ~60fps, so PIXI's default rAF-driven
-// tickers can't go higher. We stop them and drive both the model's motion
-// (PIXI.Ticker.shared) and rendering (app.ticker) from a timer instead.
-// Set to 0 to render as fast as the main thread allows.
-const targetFPS = 144;
-app.ticker.stop();
-PIXI.Ticker.shared.stop();
-const frameMs = targetFPS > 0 ? 1000 / targetFPS : 0;
-const tick = () => {
-	const now = performance.now();
-	PIXI.Ticker.shared.update(now); // model motion / physics
-	app.ticker.update(now); // render + fps overlay
-	if (frameMs === 0) setTimeout(tick, 0);
-};
-if (frameMs === 0) setTimeout(tick, 0);
-else setInterval(tick, frameMs);
