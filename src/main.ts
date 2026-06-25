@@ -4,6 +4,7 @@ import { modelConfig } from "./model-config";
 import { startFaceTracking } from "./face-tracking";
 import { setupExpressions } from "./expressions";
 import { setupPhysics } from "./physics";
+import { setupInteraction } from "./interaction";
 import { mountFps } from "./fps";
 
 // expose PIXI so pixi-live2d-display can auto-register its ticker/interaction
@@ -28,6 +29,7 @@ globalThis.__model = model; // pokeable from the webview devtools
 
 mountFps(app);
 setupPhysics(model);
+await setupInteraction(app, model);
 
 // Both features keep the app running if they fail (e.g. camera denied).
 startFaceTracking(model).catch((err) => console.warn("Face tracking disabled:", err));

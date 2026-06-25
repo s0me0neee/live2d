@@ -19,7 +19,7 @@ export const config = {
 	// --- idle "breathing" (built-in natural sway, applied at load) ---
 	// Scales the breath sine added to head angle + ParamBreath (which feeds the
 	// hair/cloth physics). 1 = model default, >1 = livelier, 0 = dead still.
-	breath: 0.5,
+	breath: 0.2,
 
 	// --- ambient pendulum physics (hair/cloth sim, applied at load) ---
 	physics: {
@@ -39,7 +39,7 @@ export const config = {
 
 	// --- eyes / mouth (ParamEye*, ParamMouth*) ---
 	blinkGain: 1.4, // how easily a blink fully closes
-	jaw: { deadzone: 0.004, curve: 0.23, gain: 1.1 }, // smooth speech-visible mouth
+	jaw: { deadzone: 0.0045, curve: 0.24, gain: 1 }, // smooth speech-visible mouth
 
 	// --- performance ---
 	// Cap MediaPipe inference rate (its cost dominates). The render/smoothing
