@@ -5,18 +5,18 @@
 //!   rustc src/build_exp_keys.rs -o /tmp/build_exp_keys && /tmp/build_exp_keys
 #![allow(dead_code)] // also compiled into the lib crate, where it's unused
 
+use std::fmt::Write;
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 
 macro_rules! model_path {
     () => {
-        "/Users/maot27/JetBrain/rust/live2d/model/ariu/"
+        "../model/ariu/"
     };
 }
 macro_rules! out_path {
     () => {
-        "/Users/maot27/JetBrain/rust/live2d/src/expressions/generated.ts"
+        "../src/expressions/generated.ts"
     };
 }
 
@@ -26,8 +26,11 @@ const EXP_SUFFIX: &str = ".exp3.json";
 const KEYS: &[&str] = &["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
 pub fn build_keys() -> std::io::Result<()> {
-    let mut files: Vec<String> = fs::read_dir(model_path!())?
-        .filter_map(|e| e.ok())
+    let base = std::env::current_dir()?;
+    println!("Dir set to: {}", base.display());
+
+    let mut files: Vec<String> = fs::read_dir(base.join(model_path!()))?
+        .filter_map(std::result::Result::ok)
         .filter_map(|e| e.file_name().into_string().ok())
         .filter(|name| name.ends_with(EXP_SUFFIX))
         .collect();
@@ -46,18 +49,14 @@ pub fn build_keys() -> std::io::Result<()> {
         let name = &file[..file.len() - EXP_SUFFIX.len()];
         let key = KEYS.get(i).copied().unwrap_or("");
         // {:?} emits a valid quoted/escaped string literal for these ASCII names
-        out.push_str(&format!(
-            r#"	{{ name: {:?}, file: {:?}, key: {:?} }},
-"#,
-            name, file, key
-        ));
+        let _ = writeln!(out, r"{{ name: {name:?}, file: {file:?}, key: {key:?} }},");
     }
     out.push_str("];\n");
 
-    if let Some(dir) = Path::new(out_path!()).parent() {
+    if let Some(dir) = Path::new(&base.join(out_path!())).parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::File::create(out_path!())?.write_all(out.as_bytes())?;
+    std::io::Write::write_all(&mut fs::File::create(out_path!())?, out.as_bytes())?;
     println!("wrote {} expressions -> {}", files.len(), out_path!());
     Ok(())
 }

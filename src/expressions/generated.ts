@@ -8,14 +8,14 @@ export interface ExpressionBinding {
 }
 
 export const expressions: ExpressionBinding[] = [
-	{ name: "circle_eyes", file: "circle_eyes.exp3.json", key: "1" },
-	{ name: "controller", file: "controller.exp3.json", key: "2" },
-	{ name: "darkened", file: "darkened.exp3.json", key: "3" },
-	{ name: "hat", file: "hat.exp3.json", key: "4" },
-	{ name: "heart_eyes", file: "heart_eyes.exp3.json", key: "5" },
-	{ name: "jk_bag", file: "jk_bag.exp3.json", key: "6" },
-	{ name: "remove_coat", file: "remove_coat.exp3.json", key: "7" },
-	{ name: "skirt", file: "skirt.exp3.json", key: "8" },
-	{ name: "twintail_L_hide", file: "twintail_L_hide.exp3.json", key: "9" },
-	{ name: "twintail_R_hide", file: "twintail_R_hide.exp3.json", key: "0" },
+{ name: "circle_eyes", file: "circle_eyes.exp3.json", key: "1" },
+{ name: "controller", file: "controller.exp3.json", key: "2" },
+{ name: "darkened", file: "darkened.exp3.json", key: "3" },
+{ name: "hat", file: "hat.exp3.json", key: "4" },
+{ name: "heart_eyes", file: "heart_eyes.exp3.json", key: "5" },
+{ name: "jk_bag", file: "jk_bag.exp3.json", key: "6" },
+{ name: "remove_coat", file: "remove_coat.exp3.json", key: "7" },
+{ name: "skirt", file: "skirt.exp3.json", key: "8" },
+{ name: "twintail_L_hide", file: "twintail_L_hide.exp3.json", key: "9" },
+{ name: "twintail_R_hide", file: "twintail_R_hide.exp3.json", key: "0" },
 ];
