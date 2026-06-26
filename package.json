@@ -3,21 +3,26 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "dist-electron/main.cjs",
+  "trustedDependencies": ["electron", "esbuild"],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/dev.mjs",
+    "dev:renderer": "vite",
+    "build": "tsc && vite build && node scripts/build-electron.mjs",
+    "build:renderer": "tsc && vite build",
+    "build:electron": "node scripts/build-electron.mjs",
+    "start": "electron .",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "gen:keys": "node scripts/build-exp-keys.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-opener": "^2.5.4",
     "pixi-live2d-display-lipsyncpatch": "^0.5.0-ls-8",
     "pixi.js": "^7.4.2"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.3",
+    "electron": "^33.2.0",
+    "esbuild": "^0.24.0",
     "vite": "^8.1.0",
     "typescript": "~6.0.3"
   }

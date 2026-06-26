@@ -42,6 +42,12 @@ export const config = {
 	jaw: { deadzone: 0.004, curve: 0.22, gain: 1 }, // smooth speech-visible mouth
 
 	// --- performance ---
+	// Cap the render/draw rate. With vsync disabled (the Electron overlay unlocks
+	// the framerate) the model can run at 200+ fps, which wastes GPU/power for no
+	// visible gain past your monitor's refresh. 0 = uncapped; otherwise the Pixi
+	// ticker is limited to this many frames/sec. Try your monitor's refresh
+	// (e.g. 60, 120, 144).
+	renderFps: 120,
 	// Cap MediaPipe inference rate (its cost dominates). The render/smoothing
 	// still runs at full refresh, so lowering this stays smooth but less snappy.
 	detectFps: 60,

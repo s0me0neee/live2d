@@ -1,5 +1,6 @@
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
+import { config } from "./config";
 import { modelConfig } from "./model-config";
 import { startFaceTracking } from "./face-tracking";
 import { setupExpressions } from "./expressions";
@@ -19,6 +20,13 @@ const app = new PIXI.Application({
 	autoDensity: true, // keep CSS size correct while the backing store scales up
 	antialias: true,
 });
+
+// Optional frame cap. The Electron overlay disables vsync, so without this the
+// render loop runs unbounded (200+ fps). maxFPS = 0 is Pixi's "uncapped"; cap
+// both the app's render ticker and the shared ticker (which pixi-live2d-display
+// uses to update the model) so the limit covers drawing AND model updates.
+app.ticker.maxFPS = config.renderFps;
+PIXI.Ticker.shared.maxFPS = config.renderFps;
 
 // Log which GPU the WebGL context landed on. "llvmpipe"/"softpipe"/"SwiftShader"
 // here means we're rendering on the CPU (slow); we want the NVIDIA renderer.
