@@ -9,6 +9,13 @@ export const config = {
 	mirror: true, // model reflects you like a mirror; flip if it feels backwards
 	smoothing: 0.55, // 0..1 per render frame, higher = snappier head/eyes
 
+	// --- overlay click-through (Electron only) ---
+	// "off"  = window captures all clicks (drag/zoom/panel work everywhere).
+	// "auto" = clicks pass through to the desktop EXCEPT over the model, which
+	//          stays grabbable. Driven by main-process cursor polling so it
+	//          works on Linux/Hyprland (where Electron can't forward events).
+	clickThrough: "auto" as "off" | "auto",
+
 	// --- head (ParamAngleX/Y/Z) ---
 	headGain: 1.5, // model rotation per degree of head turn
 	headClampDeg: 90, // max |head angle|

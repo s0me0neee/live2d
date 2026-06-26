@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, screen, session } from "electron";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -46,6 +46,62 @@ ipcMain.handle("save-pos", async (_e, pos: Pos): Promise<void> => {
 	await writeFile(POS_FILE, serializePos(pos));
 });
 
+// --- overlay click-through ("auto" mode) -----------------------------------
+// `setIgnoreMouseEvents(true, { forward: true })` can't be used to hit-test on
+// Linux (forwarding is Win/macOS only), so the renderer streams the model's
+// window-relative bounds and we poll the global cursor against them here: cursor
+// over the model => capture clicks (grabbable); anywhere else => pass through.
+interface Rect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+let mainWindow: BrowserWindow | null = null;
+let overlayMode: "off" | "auto" = "off";
+let hitRegion: Rect | null = null;
+let ignoring = false;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function applyIgnore(next: boolean): void {
+	if (next === ignoring) return;
+	ignoring = next;
+	mainWindow?.setIgnoreMouseEvents(next);
+}
+
+function pollCursor(): void {
+	if (!mainWindow || overlayMode !== "auto") return;
+	const p = screen.getCursorScreenPoint(); // absolute, DIP
+	const b = mainWindow.getContentBounds(); // absolute, DIP
+	const r = hitRegion;
+	const inside =
+		!!r &&
+		p.x >= b.x + r.x &&
+		p.x <= b.x + r.x + r.width &&
+		p.y >= b.y + r.y &&
+		p.y <= b.y + r.y + r.height;
+	applyIgnore(!inside); // pass through unless the cursor is over the model
+}
+
+ipcMain.on("overlay:set-mode", (_e, mode: "off" | "auto") => {
+	overlayMode = mode;
+	if (mode === "auto") {
+		applyIgnore(true); // start passed-through until the cursor finds the model
+		pollTimer ??= setInterval(pollCursor, 16); // ~60 Hz
+	} else {
+		if (pollTimer) {
+			clearInterval(pollTimer);
+			pollTimer = null;
+		}
+		applyIgnore(false);
+	}
+});
+
+ipcMain.on("overlay:hit-region", (_e, rect: Rect | null) => {
+	hitRegion = rect;
+});
+
 function createWindow(): void {
 	const win = new BrowserWindow({
 		width: 800,
@@ -65,6 +121,11 @@ function createWindow(): void {
 
 	// Float above normal windows (taskbars/fullscreen apps too).
 	win.setAlwaysOnTop(true, "screen-saver");
+
+	mainWindow = win;
+	win.on("closed", () => {
+		if (mainWindow === win) mainWindow = null;
+	});
 
 	if (DEV_URL) {
 		win.loadURL(DEV_URL);

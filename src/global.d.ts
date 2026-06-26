@@ -7,6 +7,10 @@ declare global {
 		electronAPI?: {
 			loadPos(): Promise<{ x: number; y: number; scale: number } | null>;
 			savePos(pos: { x: number; y: number; scale: number }): Promise<void>;
+			setOverlayMode(mode: "off" | "auto"): void;
+			reportHitRegion(
+				rect: { x: number; y: number; width: number; height: number } | null,
+			): void;
 		};
 	}
 	// eslint-disable-next-line no-var
