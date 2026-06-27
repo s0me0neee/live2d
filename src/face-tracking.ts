@@ -1,7 +1,6 @@
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { config } from "./config";
-import { modelConfig } from "./model-config";
+import type { Config, ModelConfig } from "./config";
 
 // The Live2D parameters we drive from the webcam.
 interface Rig {
@@ -36,19 +35,23 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * Resolves once the camera + landmarker are ready (throws if the camera is
  * denied/unavailable so the caller can keep the app running without tracking).
  */
-export async function startFaceTracking(model: Live2DModel): Promise<void> {
-	const video = await openCamera();
+export async function startFaceTracking(
+	model: Live2DModel,
+	config: Config,
+	modelConfig: ModelConfig,
+): Promise<void> {
+	const video = await openCamera(config);
 	const landmarker = await createLandmarker();
 
 	const target = neutral(); // latest detection
 	const rig = neutral(); // smoothed values actually applied
 
-	startDetectionLoop(video, landmarker, target);
-	driveModel(model, rig, target);
+	startDetectionLoop(video, landmarker, target, config);
+	driveModel(model, rig, target, config, modelConfig);
 }
 
 /** Opens the user-facing camera into a hidden, playing <video>. */
-async function openCamera(): Promise<HTMLVideoElement> {
+async function openCamera(config: Config): Promise<HTMLVideoElement> {
 	const video = document.createElement("video");
 	video.autoplay = true;
 	video.playsInline = true;
@@ -87,6 +90,7 @@ function startDetectionLoop(
 	video: HTMLVideoElement,
 	landmarker: FaceLandmarker,
 	target: Rig,
+	config: Config,
 ): void {
 	const minInterval = 1000 / config.detectFps;
 	let lastDetect = 0;
@@ -100,7 +104,7 @@ function startDetectionLoop(
 		lastVideoTime = video.currentTime;
 
 		const res = landmarker.detectForVideo(video, now);
-		if (res.faceBlendshapes?.length) mapResult(res, target);
+		if (res.faceBlendshapes?.length) mapResult(res, target, config);
 	};
 	requestAnimationFrame(detect);
 }
@@ -110,7 +114,13 @@ function startDetectionLoop(
  * - face params on "afterMotionUpdate" (so the hair/cloth physics reacts to them)
  * - body params on "beforeModelUpdate" (after physics, which would clobber them)
  */
-function driveModel(model: Live2DModel, rig: Rig, target: Rig): void {
+function driveModel(
+	model: Live2DModel,
+	rig: Rig,
+	target: Rig,
+	config: Config,
+	modelConfig: ModelConfig,
+): void {
 	const internal = model.internalModel as any;
 	const cm = internal.coreModel;
 	internal.eyeBlink = undefined; // we drive the eyes ourselves
@@ -134,21 +144,27 @@ function driveModel(model: Live2DModel, rig: Rig, target: Rig): void {
 		set("ParamBrowRY", rig.browRY);
 	});
 
-	// Hair and cloth params are physics OUTPUTS; collect each group (with rest
-	// values) so we can scale their swing around rest after physics has run.
-	const ids = cm._model.parameters.ids as string[];
-	const group = (pred: (id: string) => boolean) =>
-		ids.map((id, index) => ({ id, def: cm.getParameterDefaultValue(index) }))
-			.filter((p) => pred(p.id));
-	const hair = group((id) => id.startsWith(modelConfig.hair.prefix));
-	const clothes = group((id) => id.startsWith(modelConfig.clothes.prefix));
+	// Each [gain] setting carries a multiplier + the physics-output params it
+	// drives (resolved from the model's .physics3.json). Pair them with their
+	// rest values once so the per-frame swing scales deviation from rest.
+	const restById = new Map(
+		(cm._model.parameters.ids as string[]).map(
+			(id, index) => [id, cm.getParameterDefaultValue(index)] as const,
+		),
+	);
+	const gainGroups: { gain: number; params: { id: string; rest: number }[] }[] = [];
+	for (const { value, params } of Object.values(modelConfig.gain)) {
+		if (value === 1) continue;
+		const matched = params
+			.filter((id) => restById.has(id))
+			.map((id) => ({ id, rest: restById.get(id) as number }));
+		if (matched.length) gainGroups.push({ gain: value, params: matched });
+	}
 
-	// Scale a group's deviation from rest by `gain` (no-op at 1).
-	const swing = (params: { id: string; def: number }[], gain: number) => {
-		if (gain === 1) return;
+	const swing = (params: { id: string; rest: number }[], gain: number) => {
 		for (const p of params) {
 			const cur = cm.getParameterValueById(p.id);
-			set(p.id, p.def + (cur - p.def) * gain);
+			set(p.id, p.rest + (cur - p.rest) * gain);
 		}
 	};
 
@@ -162,13 +178,12 @@ function driveModel(model: Live2DModel, rig: Rig, target: Rig): void {
 		set("ParamBodyAngleZ", rig.angleZ * f);
 		set("ParamBodyAngleZ2", rig.angleZ * f);
 
-		swing(hair, modelConfig.hair.gain);
-		swing(clothes, modelConfig.clothes.gain);
+		for (const g of gainGroups) swing(g.params, g.gain);
 	});
 }
 
 /** Translate one MediaPipe result into Live2D-shaped rig values. */
-function mapResult(res: any, out: Rig): void {
+function mapResult(res: any, out: Rig, config: Config): void {
 	const bs: Record<string, number> = {};
 	for (const c of res.faceBlendshapes[0].categories) bs[c.categoryName] = c.score;
 	const v = (name: string) => bs[name] ?? 0;

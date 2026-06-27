@@ -1,16 +1,22 @@
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { config } from "./config";
-import { modelConfig } from "./model-config";
+import { DEFAULT_CONFIG, DEFAULT_MODEL_CONFIG, type ResolvedConfig } from "./config";
 import { startFaceTracking } from "./face-tracking";
 import { setupExpressions } from "./expressions";
 import { setupPhysics } from "./physics";
 import { setupInteraction } from "./interaction";
-import { setupClickThrough } from "./overlay";
+import { setupWindowControls } from "./window-controls";
 import { mountFps } from "./fps";
 
 // expose PIXI so pixi-live2d-display can auto-register its ticker/interaction
 window.PIXI = PIXI;
+
+// Config comes from the main process (TOML). In plain-browser dev there's no
+// electronAPI, so fall back to defaults — which have no model, so nothing loads.
+const api = window.electronAPI;
+const { config, model: modelConfig }: ResolvedConfig = api
+	? await api.getConfig()
+	: { modelName: "", config: DEFAULT_CONFIG, model: { ...DEFAULT_MODEL_CONFIG, expressions: {} } };
 
 const app = new PIXI.Application({
 	view: document.getElementById("live2d") as HTMLCanvasElement,
@@ -37,19 +43,27 @@ PIXI.Ticker.shared.maxFPS = config.renderFps;
 	console.log("WebGL renderer:", dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "(masked)");
 }
 
-const model = await Live2DModel.from(modelConfig.dir + modelConfig.file);
-app.stage.addChild(model);
-model.anchor.set(0.5, 0.5);
-model.position.set(app.screen.width / 2, app.screen.height / 2);
-model.scale.set(modelConfig.scale);
-
-globalThis.__model = model; // pokeable from the webview devtools
-
 mountFps(app);
-setupPhysics(model);
-await setupInteraction(app, model);
-setupClickThrough(model);
+setupWindowControls();
 
-// Both features keep the app running if they fail (e.g. camera denied).
-startFaceTracking(model).catch((err) => console.warn("Face tracking disabled:", err));
-setupExpressions(model).catch((err) => console.warn("Expressions disabled:", err));
+if (!modelConfig.location || !modelConfig.model) {
+	console.warn("No model configured — set location/model in the model's TOML.");
+} else {
+	const model = await Live2DModel.from(`/${modelConfig.location}/${modelConfig.model}`);
+	app.stage.addChild(model);
+	model.anchor.set(0.5, 0.5);
+	// First load: centered at scale 1. setupInteraction restores [pos] if present.
+	model.position.set(app.screen.width / 2, app.screen.height / 2);
+	model.scale.set(1);
+
+	globalThis.__model = model; // pokeable from the webview devtools
+
+	setupPhysics(model, config);
+	setupInteraction(app, model, modelConfig);
+
+	// Both features keep the app running if they fail (e.g. camera denied).
+	startFaceTracking(model, config, modelConfig).catch((err) =>
+		console.warn("Face tracking disabled:", err),
+	);
+	setupExpressions(model, modelConfig).catch((err) => console.warn("Expressions disabled:", err));
+}

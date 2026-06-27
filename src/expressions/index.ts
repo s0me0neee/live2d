@@ -1,30 +1,33 @@
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { modelConfig } from "../model-config";
-import { expressions, type ExpressionBinding } from "./generated";
+import type { ModelConfig } from "../config";
 
 interface ExpParam {
 	Id: string;
 	Value: number;
 }
 
-interface LoadedExpression extends ExpressionBinding {
+interface LoadedExpression {
+	name: string;
+	key: string;
 	params: ExpParam[];
 	checkbox?: HTMLInputElement;
 }
 
 /**
- * Loads every generated expression, builds a toggle panel + keyboard shortcuts,
- * and applies expression parameters to the model.
+ * Loads the model's discovered expressions, builds a toggle panel + keyboard
+ * shortcuts, and applies expression parameters to the model.
  *
  * These are independent outfit/face toggles (a dedicated "Add" param each), so
  * several can be on at once. Cubism keeps the last value we write, so we apply
  * params imperatively on toggle (no per-frame work) and reset to default on off.
+ * The on/off state is restored from, and persisted back into, the model's TOML.
  */
-export async function setupExpressions(model: Live2DModel): Promise<void> {
+export async function setupExpressions(model: Live2DModel, modelConfig: ModelConfig): Promise<void> {
+	const entries = Object.entries(modelConfig.expressions);
 	const defs: LoadedExpression[] = await Promise.all(
-		expressions.map(async (e) => {
-			const data = await fetch(modelConfig.dir + e.file).then((r) => r.json());
-			return { ...e, params: (data.Parameters ?? []) as ExpParam[] };
+		entries.map(async ([name, e]) => {
+			const data = await fetch(`/${modelConfig.location}/${e.file}`).then((r) => r.json());
+			return { name, key: e.key, params: (data.Parameters ?? []) as ExpParam[] };
 		}),
 	);
 
@@ -41,16 +44,22 @@ export async function setupExpressions(model: Live2DModel): Promise<void> {
 	}
 
 	const active = new Set<string>();
-	const setActive = (d: LoadedExpression, on: boolean) => {
+	const setActive = (d: LoadedExpression, on: boolean, persist = true) => {
 		if (on) active.add(d.name);
 		else active.delete(d.name);
 		if (d.checkbox) d.checkbox.checked = on;
 		for (const p of d.params) {
 			cm.setParameterValueById(p.Id, on ? p.Value : (offValue.get(p.Id) ?? 0));
 		}
+		if (persist) window.electronAPI?.setExpression(d.name, on).catch(() => {});
 	};
 
 	buildPanel(defs, setActive);
+
+	// Restore saved on-state without re-persisting it back.
+	for (const d of defs) {
+		if (modelConfig.expressions[d.name]?.active) setActive(d, true, false);
+	}
 
 	window.addEventListener("keydown", (e) => {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;

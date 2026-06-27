@@ -58,3 +58,63 @@ body {
 	cursor: pointer;
 }
 
+/* Move/resize guide for the overlay window — shown only while unlocked.
+   The container is a non-interactive outline marking the window edges; only the
+   drag bar and corner handles capture pointer events, so the rest of the model
+   stays directly draggable. */
+#window-guide {
+	position: fixed;
+	inset: 0;
+	z-index: 8; /* above the model canvas, below #fps / #expr-panel (z-index 10) */
+	box-sizing: border-box;
+	border: 2px dashed rgba(255, 255, 255, 0.5);
+	pointer-events: none;
+}
+
+#window-guide .wg-bar {
+	position: absolute;
+	top: 8px;
+	left: 50%;
+	transform: translateX(-50%);
+	pointer-events: auto;
+	cursor: move;
+	padding: 5px 14px;
+	font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+	color: #eee;
+	background: rgba(0, 0, 0, 0.6);
+	border-radius: 999px;
+	white-space: nowrap;
+	user-select: none;
+}
+
+#window-guide .wg-handle {
+	position: absolute;
+	width: 20px;
+	height: 20px;
+	box-sizing: border-box;
+	pointer-events: auto;
+	background: rgba(0, 0, 0, 0.5);
+	border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+#window-guide .wg-nw {
+	top: 0;
+	left: 0;
+	cursor: nwse-resize;
+}
+#window-guide .wg-ne {
+	top: 0;
+	right: 0;
+	cursor: nesw-resize;
+}
+#window-guide .wg-sw {
+	bottom: 0;
+	left: 0;
+	cursor: nesw-resize;
+}
+#window-guide .wg-se {
+	bottom: 0;
+	right: 0;
+	cursor: nwse-resize;
+}
+

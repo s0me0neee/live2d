@@ -1,29 +1,29 @@
 import type * as PIXI from "pixi.js";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { loadPos, savePos } from "./pos-store";
+import type { ModelConfig } from "./config";
+import { savePos } from "./pos-store";
 
-// Zoom limits as a multiple of the model's starting scale.
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 5;
+// Absolute zoom limits (first load starts at scale 1).
+const MIN_SCALE = 0.05;
+const MAX_SCALE = 5;
 const WHEEL_SENSITIVITY = 0.001; // higher = faster zoom per scroll tick
 
 /**
  * Lets the user drag the model with the mouse and zoom with the scroll wheel.
  * Drag grabs the model itself (not the empty canvas); zoom is anchored under the
- * cursor so the point you point at stays put.
+ * cursor so the point you point at stays put. The live transform is restored
+ * from (and persisted back into) the model's TOML.
  */
-export async function setupInteraction(app: PIXI.Application, model: Live2DModel): Promise<void> {
-	// Capture the configured default BEFORE restoring, so zoom limits stay
-	// relative to model-config's scale, not whatever was last saved.
-	const baseScale = model.scale.x;
-	const min = baseScale * MIN_ZOOM;
-	const max = baseScale * MAX_ZOOM;
-
-	const clampScale = (s: number) => Math.min(max, Math.max(min, s));
+export function setupInteraction(
+	app: PIXI.Application,
+	model: Live2DModel,
+	modelConfig: ModelConfig,
+): void {
+	const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 	const persist = () => savePos({ x: model.x, y: model.y, scale: model.scale.x });
 
-	// restore the last drag/zoom from pos.toml (no-op in plain-browser dev)
-	const saved = await loadPos();
+	// Restore the last drag/zoom (absent until the user first moves the model).
+	const saved = modelConfig.pos;
 	if (saved) {
 		model.position.set(saved.x, saved.y);
 		model.scale.set(clampScale(saved.scale));

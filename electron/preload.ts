@@ -1,16 +1,20 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { Pos, ResolvedConfig } from "../src/config";
 
-export interface Pos {
+export interface Bounds {
 	x: number;
 	y: number;
-	scale: number;
+	width: number;
+	height: number;
 }
 
-// Bridge the position-persistence IPC into the sandboxed renderer. Mirrors the
-// old Tauri `load_pos` / `save_pos` commands.
 contextBridge.exposeInMainWorld("electronAPI", {
-	loadPos: (): Promise<Pos | null> => ipcRenderer.invoke("load-pos"),
-	savePos: (pos: Pos): Promise<void> => ipcRenderer.invoke("save-pos", pos),
+	// Resolved TOML config, fetched once at boot.
+	getConfig: (): Promise<ResolvedConfig> => ipcRenderer.invoke("config:get"),
+	// Persist the live transform / an expression toggle into the model's TOML.
+	savePos: (pos: Pos): Promise<void> => ipcRenderer.invoke("config:save-pos", pos),
+	setExpression: (name: string, active: boolean): Promise<void> =>
+		ipcRenderer.invoke("config:set-expression", name, active),
 
 	// Overlay click-through control (≈ Tauri overlay_set_lock). `locked` = the
 	// overlay passes mouse events through to whatever is underneath.
@@ -26,5 +30,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.on("overlay:lock-changed", listener);
 			return () => ipcRenderer.removeListener("overlay:lock-changed", listener);
 		},
+	},
+
+	// Move/resize the OS overlay window itself (driven by the in-app guide shown
+	// when unlocked). getBounds is awaited at drag start; setBounds is fire-and-
+	// forget so a fast drag isn't gated on IPC round-trips.
+	windowControls: {
+		getBounds: (): Promise<Bounds | null> => ipcRenderer.invoke("window:get-bounds"),
+		setBounds: (b: Bounds): void => ipcRenderer.send("window:set-bounds", b),
 	},
 });

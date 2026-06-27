@@ -1,62 +1,97 @@
-/**
- * Model-INDEPENDENT tuning + performance knobs. These drive Cubism-standard
- * parameters / the generic physics + breath runtime, so they work on any
- * Cubism 4 model unchanged. Per-model settings (files, scale, hair/cloth param
- * names) live in model-config.ts.
- */
-export const config = {
-	// --- feel / mirroring ---
-	mirror: true, // model reflects you like a mirror; flip if it feels backwards
-	smoothing: 0.55, // 0..1 per render frame, higher = snappier head/eyes
+// Shared config types + defaults. Live values are loaded at runtime from TOML
+// (electron/config.ts) and sent to the renderer over IPC; these defaults seed
+// new files and back-fill missing keys.
 
-	// --- overlay click-through (Electron only) ---
-	// "off"  = window captures all clicks (drag/zoom/panel work everywhere).
-	// "auto" = clicks pass through to the desktop EXCEPT over the model, which
-	//          stays grabbable. Driven by main-process cursor polling so it
-	//          works on Linux/Hyprland (where Electron can't forward events).
-	clickThrough: "auto" as "off" | "auto",
+export interface Config {
+	mirror: boolean;
+	smoothing: number;
 
-	// --- head (ParamAngleX/Y/Z) ---
-	headGain: 1.5, // model rotation per degree of head turn
-	headClampDeg: 90, // max |head angle|
+	headGain: number;
+	headClampDeg: number;
 
-	// --- body (ParamBodyAngle*, derived from the head pose) ---
-	bodyFollow: 1 / 3, // body lean as a fraction of head angle
+	bodyFollow: number;
+	breath: number;
 
-	// --- idle "breathing" (built-in natural sway, applied at load) ---
-	// Scales the breath sine added to head angle + ParamBreath (which feeds the
-	// hair/cloth physics). 1 = model default, >1 = livelier, 0 = dead still.
-	breath: 0.2,
-
-	// --- ambient pendulum physics (hair/cloth sim, applied at load) ---
 	physics: {
-		// Master switch for all wind (steady + gust). false = no breeze at all.
+		windEnabled: boolean;
+		wind: { x: number; y: number };
+		gust: number;
+		gustHz: number;
+		springiness: number;
+	};
+
+	blinkGain: number;
+	jaw: { deadzone: number; curve: number; gain: number };
+
+	renderFps: number;
+	detectFps: number;
+	camera: { width: number; height: number };
+}
+
+export const DEFAULT_CONFIG: Config = {
+	mirror: true,
+	smoothing: 0.55,
+	headGain: 1.5,
+	headClampDeg: 90,
+	bodyFollow: 1 / 3,
+	breath: 0.2,
+	physics: {
 		windEnabled: false,
-		// Steady breeze added to every strand. +x = screen-right, +y = up.
-		// Small values read as a draft; 0,0 = still. (try wind.x ~0.1)
 		wind: { x: 0.03, y: -0.03 },
-		// Gust oscillates the wind for a living breeze, on top of `wind`.
-		// gust = peak strength, gustHz = gusts per second. gust 0 = steady.
 		gust: 0.05,
 		gustHz: 0.5,
-		// Springiness: multiplies every strand's mobility (bounce / overshoot).
-		// 1 = model default, >1 = jigglier, <1 = stiffer. Keep under ~1.6.
 		springiness: 1.02,
 	},
-
-	// --- eyes / mouth (ParamEye*, ParamMouth*) ---
-	blinkGain: 1.2, // how easily a blink fully closes
-	jaw: { deadzone: 0.004, curve: 0.22, gain: 1 }, // smooth speech-visible mouth
-
-	// --- performance ---
-	// Cap the render/draw rate. With vsync disabled (the Electron overlay unlocks
-	// the framerate) the model can run at 200+ fps, which wastes GPU/power for no
-	// visible gain past your monitor's refresh. 0 = uncapped; otherwise the Pixi
-	// ticker is limited to this many frames/sec. Try your monitor's refresh
-	// (e.g. 60, 120, 144).
+	blinkGain: 1.2,
+	jaw: { deadzone: 0.004, curve: 0.22, gain: 1 },
 	renderFps: 120,
-	// Cap MediaPipe inference rate (its cost dominates). The render/smoothing
-	// still runs at full refresh, so lowering this stays smooth but less snappy.
 	detectFps: 60,
 	camera: { width: 1080, height: 960 },
-} as const;
+};
+
+// Live transform persisted as the user drags/zooms.
+export interface Pos {
+	x: number;
+	y: number;
+	scale: number;
+}
+
+// One toggleable expression, discovered from a model's *.exp3.json files.
+export interface Expression {
+	file: string;
+	key: string;
+	active: boolean;
+}
+
+// One physics setting's gain: how far its params swing from rest (1 = default),
+// with the output params resolved from the model's .physics3.json.
+export interface GainSetting {
+	value: number;
+	params: string[];
+}
+
+export interface ModelConfig {
+	location: string; // model dir, relative to project root / cwd (or absolute)
+	model: string; // the .model3.json filename inside `location`
+
+	// Secondary-motion tuning, keyed by physics setting name (discovered from the
+	// model's .physics3.json). On disk only the value (multiplier) is stored.
+	gain: Record<string, GainSetting>;
+
+	pos?: Pos; // absent until the user first drags/zooms → first load centers at scale 1
+	expressions: Record<string, Expression>;
+}
+
+// Blank template: a model's location and param names are model-specific, so the
+// user fills them in models/<name>.toml. An empty config loads no model.
+export const DEFAULT_MODEL_CONFIG: Omit<ModelConfig, "expressions" | "pos"> = {
+	location: "",
+	model: "",
+	gain: {},
+};
+
+export interface ResolvedConfig {
+	modelName: string;
+	config: Config;
+	model: ModelConfig;
+}

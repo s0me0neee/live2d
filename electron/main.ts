@@ -11,6 +11,8 @@ import {
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { applyMacOverlay } from "./mac-overlay";
+import { loadConfig, savePos, setExpressionActive } from "./config";
+import type { Pos } from "../src/config";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // __dirname is a native global in the bundled CommonJS output (dist-electron/).
@@ -25,46 +27,97 @@ const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // (Verified: setting it inside whenReady → captured; setting it here → ignored.)
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
 
-// Keep parity with the Tauri build: the saved position lives in pos.toml at the
-// repo root (cwd in dev). Only x/y/scale, so a tiny hand-rolled (de)serializer
-// avoids a TOML dependency.
-const POS_FILE = resolve(process.cwd(), "pos.toml");
+// Brand the app as "web2d" instead of the default "Electron" (menu bar, About
+// panel, app.getName()). Must run before whenReady so the name is set when the
+// app menu/process metadata is first read.
+app.setName("web2d");
+app.setAppUserModelId("com.web2d.app"); // Windows taskbar grouping / notifications
+process.title = "web2d"; // main-process name in `ps` (Activity Monitor still shows Electron until packaged)
 
-interface Pos {
+// Config IPC. The renderer fetches the resolved config once at boot, then writes
+// back the live transform / expression toggles as the user interacts. All file
+// IO lives in ./config (the model's TOML is the single source of truth).
+ipcMain.handle("config:get", () => loadConfig());
+ipcMain.handle("config:save-pos", (_e, pos: Pos) => savePos(pos));
+ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
+	setExpressionActive(name, Boolean(active)),
+);
+
+// --- overlay window geometry persistence -------------------------------------
+// The window itself can be moved/resized via the in-app guide (shown when
+// unlocked). Persist its bounds next to pos.toml so it reopens where it was left.
+const WIN_FILE = resolve(process.cwd(), "win.toml");
+const MIN_W = 200;
+const MIN_H = 150;
+
+interface Bounds {
 	x: number;
 	y: number;
-	scale: number;
+	width: number;
+	height: number;
 }
 
-function parsePos(text: string): Pos | null {
+// Last-known bounds: loaded before the first createWindow() and kept current as
+// the user drags/resizes, so re-creating the window (macOS `activate`) restores it.
+let savedBounds: Bounds | null = null;
+
+function parseBounds(text: string): Bounds | null {
 	const out: Record<string, number> = {};
 	for (const line of text.split("\n")) {
 		const m = line.match(/^\s*(\w+)\s*=\s*([-\d.eE+]+)/);
 		if (m) out[m[1]] = Number(m[2]);
 	}
-	if (["x", "y", "scale"].every((k) => Number.isFinite(out[k]))) {
-		return { x: out.x, y: out.y, scale: out.scale };
+	if (["x", "y", "width", "height"].every((k) => Number.isFinite(out[k]))) {
+		return { x: out.x, y: out.y, width: out.width, height: out.height };
 	}
 	return null;
 }
 
-function serializePos(p: Pos): string {
-	// Force a decimal point so the values round-trip as TOML floats.
-	const f = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
-	return `x = ${f(p.x)}\ny = ${f(p.y)}\nscale = ${f(p.scale)}\n`;
+function serializeBounds(b: Bounds): string {
+	return `x = ${b.x}\ny = ${b.y}\nwidth = ${b.width}\nheight = ${b.height}\n`;
 }
 
-ipcMain.handle("load-pos", async (): Promise<Pos | null> => {
+async function loadWinBounds(): Promise<Bounds | null> {
 	try {
-		return parsePos(await readFile(POS_FILE, "utf8"));
+		return parseBounds(await readFile(WIN_FILE, "utf8"));
 	} catch {
 		return null; // missing on first launch
 	}
-});
+}
 
-ipcMain.handle("save-pos", async (_e, pos: Pos): Promise<void> => {
-	await writeFile(POS_FILE, serializePos(pos));
-});
+let winSaveTimer: ReturnType<typeof setTimeout> | undefined;
+function saveWinBounds(b: Bounds): void {
+	savedBounds = b;
+	// Debounce: a drag/resize emits a flurry of updates; hit disk once it settles.
+	clearTimeout(winSaveTimer);
+	winSaveTimer = setTimeout(() => {
+		writeFile(WIN_FILE, serializeBounds(b)).catch((e) =>
+			console.warn("save win bounds failed:", e),
+		);
+	}, 400);
+}
+
+// Registered once (like registerOverlayIpc). The renderer drives the OS window
+// from its move/resize guide using global screen coordinates.
+function registerWindowIpc(): void {
+	ipcMain.handle("window:get-bounds", (): Bounds | null => {
+		const win = overlayWindow();
+		return win && !win.isDestroyed() ? win.getBounds() : null;
+	});
+	// Fire-and-forget (send, not invoke) so a fast drag isn't gated on round-trips.
+	ipcMain.on("window:set-bounds", (_e, b: Bounds) => {
+		const win = overlayWindow();
+		if (!win || win.isDestroyed()) return;
+		const rect: Bounds = {
+			x: Math.round(b.x),
+			y: Math.round(b.y),
+			width: Math.max(MIN_W, Math.round(b.width)),
+			height: Math.max(MIN_H, Math.round(b.height)),
+		};
+		win.setBounds(rect);
+		saveWinBounds(rect);
+	});
+}
 
 // Whether the overlay is click-through. When locked, mouse events fall through
 // to whatever is underneath (the game/desktop) — DmNote's `overlay_locked`.
@@ -106,9 +159,15 @@ function registerOverlayIpc(): void {
 }
 
 function createWindow(): void {
+	const b = savedBounds;
 	const win = new BrowserWindow({
-		width: 800,
-		height: 600,
+		title: "web2d",
+		width: b?.width ?? 800,
+		height: b?.height ?? 600,
+		// Only pass x/y when we have a saved position; otherwise let Electron center.
+		...(b ? { x: b.x, y: b.y } : {}),
+		minWidth: MIN_W,
+		minHeight: MIN_H,
 		transparent: true,
 		frame: false, // no title bar / borders
 		alwaysOnTop: true,
@@ -165,7 +224,7 @@ function createTray(): void {
 	const icon = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_B64}`);
 	if (process.platform === "darwin") icon.setTemplateImage(true);
 	tray = new Tray(icon);
-	tray.setToolTip("Live2D Overlay");
+	tray.setToolTip("web2d");
 
 	refreshTrayMenu = () => {
 		const menu = Menu.buildFromTemplate([
@@ -185,13 +244,17 @@ function createTray(): void {
 	refreshTrayMenu();
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
 	// Auto-grant the webcam (face tracking) — same trust model as the Tauri app.
 	session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
 		cb(permission === "media");
 	});
 
+	// Restore the last window geometry before creating the window so it opens in place.
+	savedBounds = await loadWinBounds();
+
 	registerOverlayIpc();
+	registerWindowIpc();
 	createTray();
 	createWindow();
 

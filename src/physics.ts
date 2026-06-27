@@ -1,5 +1,5 @@
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { config } from "./config";
+import type { Config } from "./config";
 
 /**
  * Tunes the model's pendulum physics (the hair/cloth sim) from config.physics:
@@ -10,7 +10,7 @@ import { config } from "./config";
  * the resulting amplitude. Reaches into the Cubism runtime's private fields
  * (same style as face-tracking.ts); guarded so a shape change can't break boot.
  */
-export function setupPhysics(model: Live2DModel): void {
+export function setupPhysics(model: Live2DModel, config: Config): void {
 	const internal = (model.internalModel as any);
 
 	// breath: scale the idle sine (head sway + ParamBreath). 0 kills it entirely.
