@@ -32,7 +32,7 @@ this revision; checked items are in the tree today.
 
 ### 0.2
 
-stablize the macos overlay, first the window has to be click through when it needs to be, second it has to be top most, third it has to avoid beening captured by the aerospace WM on mac. For reference dm-note <https://github.com/DmNote-App/DmNote> acheaved a perfected overylay windows effect. most likly issue, aerospace WM captures the overlay window after code changes.
+stablize the macos overlay, first the window has to be click through when it needs to be, second it has to be top most, third it has to avoid beening captured by the aerospace WM on mac. For reference dm-note <https://github.com/DmNote-App/DmNote> acheaved a perfected overylay windows effect.
 
 ### 1. Settings window
 
