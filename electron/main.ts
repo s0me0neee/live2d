@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { applyMacOverlay } from "./mac-overlay";
 import {
 	loadConfig,
-	loadWindowBounds,
+	loadWindowBoundsSync,
 	savePos,
 	saveWindowBounds,
 	setExpressionActive,
@@ -215,14 +215,15 @@ function createTray(): void {
 	refreshTrayMenu();
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
 	// Auto-grant the webcam (face tracking) — same trust model as the Tauri app.
 	session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
 		cb(permission === "media");
 	});
 
-	// Restore the last window geometry before creating the window so it opens in place.
-	savedBounds = await loadWindowBounds();
+	// Restore the last window geometry synchronously, so createWindow() still runs
+	// in this launch tick — an async gap here lets AeroSpace capture the overlay.
+	savedBounds = loadWindowBoundsSync();
 
 	registerOverlayIpc();
 	registerWindowIpc();

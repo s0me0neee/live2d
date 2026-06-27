@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { app } from "electron";
@@ -42,8 +42,15 @@ export async function loadConfig(): Promise<ResolvedConfig> {
 	return { modelName, config, model };
 }
 
-export async function loadWindowBounds(): Promise<WindowBounds | null> {
-	return parseBounds((await readToml(configFile)).window);
+// Synchronous so the window can be created in the same launch tick (an async
+// gap before createWindow lets the AeroSpace WM capture the overlay on macOS).
+export function loadWindowBoundsSync(): WindowBounds | null {
+	try {
+		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		return parseBounds(root.window);
+	} catch {
+		return null;
+	}
 }
 
 export async function saveWindowBounds(bounds: WindowBounds): Promise<void> {
