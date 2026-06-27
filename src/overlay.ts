@@ -28,7 +28,7 @@ export function setupClickThrough(model: Live2DModel): void {
 		const key = `${b.x | 0},${b.y | 0},${b.width | 0},${b.height | 0}`;
 		if (key === last) return; // only send when the box actually moves/resizes
 		last = key;
-		api.reportHitRegion({ x: b.x, y: b.y, width: b.width, height: b.height });
+		api.reportHitRegion?.({ x: b.x, y: b.y, width: b.width, height: b.height });
 	};
 
 	report();

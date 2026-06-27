@@ -33,16 +33,30 @@ const vite = spawn("pnpm", ["exec", "vite", "--port", String(PORT), "--strictPor
 	stdio: "inherit",
 });
 
+// Spawned below; declared here so cleanup can reach it. Both children must be
+// killed on exit — otherwise terminating the orchestrator (SIGTERM from an IDE,
+// a Vite crash) leaves an orphaned Electron app (and webcam) running.
+let electron = null;
+let cleaned = false;
 const cleanup = () => {
+	if (cleaned) return; // kill() is idempotent but guard the double-signal path
+	cleaned = true;
 	if (!vite.killed) vite.kill();
+	if (electron && !electron.killed) electron.kill();
 };
 process.on("exit", cleanup);
 process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 
+// If Vite dies on its own, don't leave Electron pointed at a dead server.
+vite.on("exit", () => {
+	cleanup();
+	process.exit(0);
+});
+
 // 3. Wait for it, then launch Electron.
 await waitForServer(URL);
-const electron = spawn("pnpm", ["exec", "electron", "."], {
+electron = spawn("pnpm", ["exec", "electron", "."], {
 	// pipe stderr so we can drop the harmless boot/teardown spam (system
 	// fontconfig "invalid constant" warnings + Chromium's wayland teardown
 	// lines) that would otherwise bury the app's own logs.

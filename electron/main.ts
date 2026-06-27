@@ -76,10 +76,13 @@ let refreshTrayMenu: () => void = () => {};
 
 function setOverlayLock(win: BrowserWindow, locked: boolean): void {
 	overlayLocked = locked;
+	// A window can be torn down between a caller grabbing it and this running
+	// (hotkey/tray callbacks fire async); touching a destroyed window throws.
+	if (win.isDestroyed()) return;
 	// forward:true still delivers mousemove to the renderer (for hover) while
 	// clicks pass through — matches Tauri's set_ignore_cursor_events behavior.
 	win.setIgnoreMouseEvents(locked, { forward: true });
-	if (!win.isDestroyed()) win.webContents.send("overlay:lock-changed", locked);
+	win.webContents.send("overlay:lock-changed", locked);
 	refreshTrayMenu();
 }
 
@@ -194,10 +197,14 @@ app.whenReady().then(() => {
 
 	// Global hotkey to toggle click-through. Required because once the overlay is
 	// click-through, the renderer can't receive a click to turn it back off.
-	globalShortcut.register("CommandOrControl+Alt+L", () => {
+	const ok = globalShortcut.register("CommandOrControl+Alt+L", () => {
 		const win = overlayWindow();
 		if (win) setOverlayLock(win, !overlayLocked);
 	});
+	if (!ok) {
+		// Another app already owns the combo. The tray menu still toggles the lock.
+		console.warn("[overlay] could not register CommandOrControl+Alt+L hotkey");
+	}
 
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -206,6 +213,9 @@ app.whenReady().then(() => {
 
 app.on("will-quit", () => {
 	globalShortcut.unregisterAll();
+	// Release the menubar icon explicitly so it can't linger as a ghost.
+	tray?.destroy();
+	tray = null;
 });
 
 app.on("window-all-closed", () => {

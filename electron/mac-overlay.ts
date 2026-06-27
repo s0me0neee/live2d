@@ -30,6 +30,8 @@ interface ObjcBridge {
 	sendLong: (self: unknown, sel: unknown, arg: number) => void;
 	sendULong: (self: unknown, sel: unknown, arg: number) => void;
 	sendBool: (self: unknown, sel: unknown, arg: boolean) => void;
+	// objc_msgSend typed to return `long` — for reading scalar getters (e.g. level).
+	sendRetLong: (self: unknown, sel: unknown) => number;
 }
 
 let bridge: ObjcBridge | null = null;
@@ -48,6 +50,10 @@ function objc(): ObjcBridge | null {
 			sendLong: lib.func("objc_msgSend", "void", ["void *", "void *", "long"]),
 			sendULong: lib.func("objc_msgSend", "void", ["void *", "void *", "unsigned long"]),
 			sendBool: lib.func("objc_msgSend", "void", ["void *", "void *", "bool"]),
+			sendRetLong: lib.func("objc_msgSend", "long", ["void *", "void *"]) as (
+				self: unknown,
+				sel: unknown,
+			) => number,
 		};
 		return bridge;
 	} catch (err) {
@@ -95,7 +101,5 @@ export function readMacWindowLevel(win: BrowserWindow): number | null {
 	if (!o || win.isDestroyed()) return null;
 	const nsWindow = nsWindowOf(win, o);
 	if (!nsWindow) return null;
-	const lib = koffi.load("/usr/lib/libobjc.A.dylib");
-	const levelGetter = lib.func("objc_msgSend", "long", ["void *", "void *"]);
-	return levelGetter(nsWindow, o.sel("level")) as number;
+	return o.sendRetLong(nsWindow, o.sel("level"));
 }
