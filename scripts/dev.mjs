@@ -29,7 +29,7 @@ async function waitForServer(url, tries = 100) {
 await run("node", ["scripts/build-electron.mjs"]);
 
 // 2. Vite dev server (serves the renderer + project-root assets: /model, /mediapipe).
-const vite = spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], {
+const vite = spawn("pnpm", ["exec", "vite", "--port", String(PORT), "--strictPort"], {
 	stdio: "inherit",
 });
 
@@ -42,7 +42,7 @@ process.on("SIGTERM", () => process.exit(0));
 
 // 3. Wait for it, then launch Electron.
 await waitForServer(URL);
-const electron = spawn("npx", ["electron", "."], {
+const electron = spawn("pnpm", ["exec", "electron", "."], {
 	// pipe stderr so we can drop the harmless boot/teardown spam (system
 	// fontconfig "invalid constant" warnings + Chromium's wayland teardown
 	// lines) that would otherwise bury the app's own logs.

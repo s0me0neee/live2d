@@ -1,81 +1,12 @@
-# Plan: TOML config + always-on-top overlay window
+1. make the app toggle it click through via a shortcut (cmd + alt + l)
+2. if the window is not in clickthrough mode display a bar/button so the user can find a place to drag and adjust the location and size of the window.
+3. find out what dm-note dose to achive its overlay effect on every single platform
+4. possible rewrites with a fully new project creations, crate a new electron vite app using pnpm.
+4.1. or go back to tauri framework, and just use the <https://github.com/DmNote-App/DmNote> implmentation
+<https://www.youtube.com/watch?v=zWuuk_j1iwM>
+<https://github.com/SnosMe/electron-overlay-window>
+5. implment a setting window, which launch the acctual live 2d window
+<https://stackoverflow.com/questions/50142924/create-electron-transparent-window-ontop-but-clickable-below-programs>
 
-## Context
-
-Config currently lives in two hand-written TS files: `src/config.ts`
-(model-independent tuning) and `src/model-config.ts` (per-model: paths, scale,
-hair/cloth param prefixes). We want the editable source of truth to be TOML
-instead — `config.toml` for the model-independent knobs and
-`config_<model>.toml` for each model — so non-code edits don't touch `.ts`.
-Separately, the app should behave like a desktop avatar overlay: a transparent,
-frameless, always-on-top window.
-
-The repo already has a "Rust generates TS on launch" convention:
-`src-tauri/src/build_exp_keys.rs` scans the model dir and emits
-`src/expressions/generated.ts`, and `main.rs` runs it at startup. We follow the
-same pattern for config so the frontend keeps fully-typed `config` /
-`modelConfig` objects and zero new runtime dependency.
-
----
-
-## Part 1 — TOML config (Rust generates the TS)
-
-### File layout (repo root)
-
-- `config.toml` — model-independent. Has a `model = "ariu"` selector key.
-- `config_ariu.toml` — model-dependent (one per model; selected by the key above).
-
-### `config.toml` (mirrors today's `config.ts` shape exactly)
-
-```toml
-model = "ariu"          # selects config_<model>.toml (stripped from generated TS)
-
-mirror = true
-smoothing = 0.6
-headGain = 1.5
-headClampDeg = 90
-bodyFollow = 0.333333
-breath = 0.5
-blinkGain = 1.4
-detectFps = 60
-
-[jaw]
-deadzone = 0.004
-curve = 0.23
-gain = 1.1
-
-[camera]
-width = 640
-height = 480
-
-[physics]
-windEnabled = false
-gust = 0.05
-gustHz = 0.5
-springiness = 1.02
-
-[physics.wind]
-x = 0.03
-y = -0.03
-```
-
-### `config_ariu.toml` (mirrors today's `model-config.ts`)
-
-```toml
-dir = "/model/ariu/"
-file = "ariu.model3.json"
-scale = 0.2
-
-[hair]
-prefix = "ParamHair"
-gain = 1.7
-
-[clothes]
-prefix = "Param_Angle_Rotation"
-gain = 2.0
-```
-
-Keys are kept identical to the current TS so **no consumer changes** are needed
-(`config.headGain`, `config.physics.wind.x`, `modelConfig.hair.prefix`, etc.).
-TOML rule: all bare scalars must precede the first `[table]` — values above are
-already ordered that way.
+6. make it work on linux (global hotkay)
+<https://www.electronjs.org/docs/latest/api/global-shortcut>

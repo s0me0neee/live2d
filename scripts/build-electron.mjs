@@ -14,7 +14,9 @@ await build({
 	target: "node20",
 	format: "cjs",
 	sourcemap: true,
-	external: ["electron"],
+	// electron + koffi (native addon) must stay external and resolve from
+	// node_modules at runtime; they can't be bundled.
+	external: ["electron", "koffi"],
 });
 
 console.log("built dist-electron/{main,preload}.cjs");
