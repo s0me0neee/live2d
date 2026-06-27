@@ -1,6 +1,3 @@
-// Runtime TOML config. Main owns all config file IO and sends the resolved
-// config to the renderer. Everything model-dependent (gain tuning, the live
-// `pos` transform, discovered expressions) lives in one per-model file.
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -15,6 +12,7 @@ import {
 	type ModelConfig,
 	type Pos,
 	type ResolvedConfig,
+	type WindowBounds,
 } from "../src/config";
 
 // Dev: the project's ./config dir stands in for the platform config root, so the
@@ -22,6 +20,7 @@ import {
 const appConfigDir = app.isPackaged
 	? join(app.getPath("appData"), "web2d")
 	: resolve(process.cwd(), "config", "web2d");
+const configFile = join(appConfigDir, "config.toml");
 const modelsDir = join(appConfigDir, "models");
 
 const EXP_SUFFIX = ".exp3.json";
@@ -32,14 +31,25 @@ let activeModelName = "";
 export async function loadConfig(): Promise<ResolvedConfig> {
 	await mkdir(modelsDir, { recursive: true });
 
-	const root = await readToml(join(appConfigDir, "config.toml"));
+	const root = await readToml(configFile);
 	const modelName = typeof root.model === "string" ? root.model : "ariu";
 	const config = mergeDefaults(DEFAULT_CONFIG, root);
-	await writeToml(join(appConfigDir, "config.toml"), { model: modelName, ...config });
+	// Spread `root` first so non-Config keys (e.g. [window]) survive the rewrite.
+	await writeToml(configFile, { ...root, model: modelName, ...config });
 
 	activeModelName = modelName;
 	const model = await loadModel(modelName);
 	return { modelName, config, model };
+}
+
+export async function loadWindowBounds(): Promise<WindowBounds | null> {
+	return parseBounds((await readToml(configFile)).window);
+}
+
+export async function saveWindowBounds(bounds: WindowBounds): Promise<void> {
+	const root = await readToml(configFile);
+	root.window = bounds;
+	await writeToml(configFile, root);
 }
 
 export async function savePos(pos: Pos): Promise<void> {
@@ -251,6 +261,20 @@ function parsePos(v: unknown): Pos | undefined {
 		return { x, y, scale };
 	}
 	return undefined;
+}
+
+function parseBounds(v: unknown): WindowBounds | null {
+	if (!isObject(v)) return null;
+	const { x, y, width, height } = v;
+	if (
+		typeof x === "number" &&
+		typeof y === "number" &&
+		typeof width === "number" &&
+		typeof height === "number"
+	) {
+		return { x, y, width, height };
+	}
+	return null;
 }
 
 function parseExpressions(v: unknown): Record<string, Expression> {

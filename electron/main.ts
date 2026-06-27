@@ -8,11 +8,16 @@ import {
 	session,
 	Tray,
 } from "electron";
-import { readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { applyMacOverlay } from "./mac-overlay";
-import { loadConfig, savePos, setExpressionActive } from "./config";
-import type { Pos } from "../src/config";
+import {
+	loadConfig,
+	loadWindowBounds,
+	savePos,
+	saveWindowBounds,
+	setExpressionActive,
+} from "./config";
+import type { Pos, WindowBounds } from "../src/config";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // __dirname is a native global in the bundled CommonJS output (dist-electron/).
@@ -43,79 +48,45 @@ ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
 );
 
-// --- overlay window geometry persistence -------------------------------------
-// The window itself can be moved/resized via the in-app guide (shown when
-// unlocked). Persist its bounds next to pos.toml so it reopens where it was left.
-const WIN_FILE = resolve(process.cwd(), "win.toml");
+// --- overlay window geometry -------------------------------------------------
+// The window can be moved/resized via the in-app guide (shown when unlocked).
+// Bounds persist in config.toml's [window] table (see ./config).
 const MIN_W = 200;
 const MIN_H = 150;
 
-interface Bounds {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
-
 // Last-known bounds: loaded before the first createWindow() and kept current as
 // the user drags/resizes, so re-creating the window (macOS `activate`) restores it.
-let savedBounds: Bounds | null = null;
-
-function parseBounds(text: string): Bounds | null {
-	const out: Record<string, number> = {};
-	for (const line of text.split("\n")) {
-		const m = line.match(/^\s*(\w+)\s*=\s*([-\d.eE+]+)/);
-		if (m) out[m[1]] = Number(m[2]);
-	}
-	if (["x", "y", "width", "height"].every((k) => Number.isFinite(out[k]))) {
-		return { x: out.x, y: out.y, width: out.width, height: out.height };
-	}
-	return null;
-}
-
-function serializeBounds(b: Bounds): string {
-	return `x = ${b.x}\ny = ${b.y}\nwidth = ${b.width}\nheight = ${b.height}\n`;
-}
-
-async function loadWinBounds(): Promise<Bounds | null> {
-	try {
-		return parseBounds(await readFile(WIN_FILE, "utf8"));
-	} catch {
-		return null; // missing on first launch
-	}
-}
+let savedBounds: WindowBounds | null = null;
 
 let winSaveTimer: ReturnType<typeof setTimeout> | undefined;
-function saveWinBounds(b: Bounds): void {
+function persistBounds(b: WindowBounds): void {
 	savedBounds = b;
 	// Debounce: a drag/resize emits a flurry of updates; hit disk once it settles.
 	clearTimeout(winSaveTimer);
 	winSaveTimer = setTimeout(() => {
-		writeFile(WIN_FILE, serializeBounds(b)).catch((e) =>
-			console.warn("save win bounds failed:", e),
-		);
+		saveWindowBounds(b).catch((e) => console.warn("save window bounds failed:", e));
 	}, 400);
 }
 
 // Registered once (like registerOverlayIpc). The renderer drives the OS window
 // from its move/resize guide using global screen coordinates.
 function registerWindowIpc(): void {
-	ipcMain.handle("window:get-bounds", (): Bounds | null => {
+	ipcMain.handle("window:get-bounds", (): WindowBounds | null => {
 		const win = overlayWindow();
 		return win && !win.isDestroyed() ? win.getBounds() : null;
 	});
 	// Fire-and-forget (send, not invoke) so a fast drag isn't gated on round-trips.
-	ipcMain.on("window:set-bounds", (_e, b: Bounds) => {
+	ipcMain.on("window:set-bounds", (_e, b: WindowBounds) => {
 		const win = overlayWindow();
 		if (!win || win.isDestroyed()) return;
-		const rect: Bounds = {
+		const rect: WindowBounds = {
 			x: Math.round(b.x),
 			y: Math.round(b.y),
 			width: Math.max(MIN_W, Math.round(b.width)),
 			height: Math.max(MIN_H, Math.round(b.height)),
 		};
 		win.setBounds(rect);
-		saveWinBounds(rect);
+		persistBounds(rect);
 	});
 }
 
@@ -251,7 +222,7 @@ app.whenReady().then(async () => {
 	});
 
 	// Restore the last window geometry before creating the window so it opens in place.
-	savedBounds = await loadWinBounds();
+	savedBounds = await loadWindowBounds();
 
 	registerOverlayIpc();
 	registerWindowIpc();

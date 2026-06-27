@@ -43,7 +43,8 @@ and launches Electron pointed at it.
   use the panel in the top-right.
 
 Model position/zoom persist into the model's `[pos]` table; the window's own
-position/size persist to `win.toml`. Both are gitignored (per-machine state).
+position/size persist into `config.toml`'s `[window]` table. Both live under the
+gitignored `config/web2d/` (per-machine state).
 
 ## Scripts
 

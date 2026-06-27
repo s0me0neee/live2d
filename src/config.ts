@@ -56,6 +56,14 @@ export interface Pos {
 	scale: number;
 }
 
+// Overlay window geometry, persisted in config.toml's [window] table.
+export interface WindowBounds {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
 // One toggleable expression, discovered from a model's *.exp3.json files.
 export interface Expression {
 	file: string;

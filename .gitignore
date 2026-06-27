@@ -13,9 +13,6 @@ dist-electron
 dist-ssr
 *.local
 
-# Per-machine overlay window geometry (depends on the local display layout)
-win.toml
-
 # Runtime config + per-model state (seeded on first run; carries live pos/toggles)
 config/web2d/
 

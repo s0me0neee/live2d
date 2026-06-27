@@ -51,7 +51,7 @@ The project targets **macOS only**. An earlier Linux click-through approach (ren
 - `physics.ts` — tunes the model's built-in pendulum physics + breath by mutating private Cubism runtime fields (`internal.physics._physicsRig`, `breath._breathParameters`), driven by `config.physics`.
 - `interaction.ts` — drag (grabs the model, not the canvas) + scroll-to-zoom (anchored under cursor); restores from / persists `{x,y,scale}` to the model's TOML `[pos]`.
 - `expressions/` — independent outfit/face toggles (checkbox panel + number-key shortcuts), applied imperatively on toggle.
-- `window-controls.ts` — the move/resize guide shown only when **unlocked**. The frameless/transparent/`focusable:false` window has no native title bar or resize borders, so it drives the OS window from the renderer: snapshot `windowControls.getBounds()` on grab, then translate the pointer's **global** `screenX/screenY` delta into new bounds via `windowControls.setBounds` (coalesced per rAF). Handles `stopPropagation` so grabbing the guide doesn't also trigger Pixi model-drag; the model body stays draggable elsewhere. Main persists bounds to `win.toml` (debounced) and restores them in `createWindow`.
+- `window-controls.ts` — the move/resize guide shown only when **unlocked**. The frameless/transparent/`focusable:false` window has no native title bar or resize borders, so it drives the OS window from the renderer: snapshot `windowControls.getBounds()` on grab, then translate the pointer's **global** `screenX/screenY` delta into new bounds via `windowControls.setBounds` (coalesced per rAF). Handles `stopPropagation` so grabbing the guide doesn't also trigger Pixi model-drag; the model body stays draggable elsewhere. Main persists bounds to `config.toml`'s `[window]` table (debounced) and restores them in `createWindow`.
 - `fps.ts`, `pos-store.ts`.
 
 ### Configuration (runtime TOML)
@@ -67,6 +67,6 @@ Config is loaded at runtime from TOML by the **main process** (`electron/config.
 
 ### Persisted files
 
-- `win.toml` (repo root) — overlay window geometry, written by main on `window:set-bounds` (debounced), restored in `createWindow`. **Gitignored** (per-machine).
+- Overlay window geometry lives in `config.toml`'s `[window]` table (`loadWindowBounds`/`saveWindowBounds` in `electron/config.ts`), written by main on `window:set-bounds` (debounced), restored in `createWindow`. `loadConfig`'s rewrite preserves it by spreading the existing file before the Config keys.
 - `config/web2d/` — config + per-model state (above). **Gitignored**.
 - Model assets in `model/<name>/`; MediaPipe wasm + `.task` in `public/mediapipe/`. Both served from the project root by Vite in dev, so `location` is a project-relative path; arbitrary/absolute model dirs would need a custom protocol (not built yet).
