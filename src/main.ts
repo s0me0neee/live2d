@@ -8,11 +8,10 @@ import { setupInteraction } from "./interaction";
 import { setupWindowControls } from "./window-controls";
 import { mountFps } from "./fps";
 
-// expose PIXI so pixi-live2d-display can auto-register its ticker/interaction
+// pixi-live2d-display reads window.PIXI to auto-register its ticker/interaction.
 window.PIXI = PIXI;
 
-// Config comes from the main process (TOML). In plain-browser dev there's no
-// electronAPI, so fall back to defaults — which have no model, so nothing loads.
+// In plain-browser dev there's no electronAPI; the fallback config has no model.
 const api = window.electronAPI;
 const { config, model: modelConfig }: ResolvedConfig = api
 	? await api.getConfig()
@@ -21,22 +20,19 @@ const { config, model: modelConfig }: ResolvedConfig = api
 const app = new PIXI.Application({
 	view: document.getElementById("live2d") as HTMLCanvasElement,
 	resizeTo: window,
-	backgroundAlpha: 0, // transparent canvas (handy for an overlay window later)
-	clearBeforeRender: true, // wipe the canvas each frame so a moving model leaves no trail
-	resolution: window.devicePixelRatio || 1, // native pixel density (sharp on Retina)
-	autoDensity: true, // keep CSS size correct while the backing store scales up
+	backgroundAlpha: 0,
+	clearBeforeRender: true, // else a moving model leaves a trail
+	resolution: window.devicePixelRatio || 1, // sharp on Retina
+	autoDensity: true,
 	antialias: true,
 });
 
-// Optional frame cap. The Electron overlay disables vsync, so without this the
-// render loop runs unbounded (200+ fps). maxFPS = 0 is Pixi's "uncapped"; cap
-// both the app's render ticker and the shared ticker (which pixi-live2d-display
-// uses to update the model) so the limit covers drawing AND model updates.
+// The overlay disables vsync, so cap the framerate. Both the render ticker and the
+// shared ticker (which updates the model) need the cap.
 app.ticker.maxFPS = config.renderFps;
 PIXI.Ticker.shared.maxFPS = config.renderFps;
 
-// Log which GPU the WebGL context landed on. "llvmpipe"/"softpipe"/"SwiftShader"
-// here means we're rendering on the CPU (slow); we want the NVIDIA renderer.
+// "llvmpipe"/"softpipe"/"SwiftShader" means we're on the CPU (slow), not the GPU.
 {
 	const gl = (app.renderer as PIXI.Renderer).gl;
 	const dbg = gl.getExtension("WEBGL_debug_renderer_info");
@@ -56,12 +52,12 @@ if (!modelConfig.location || !modelConfig.model) {
 	model.position.set(app.screen.width / 2, app.screen.height / 2);
 	model.scale.set(1);
 
-	globalThis.__model = model; // pokeable from the webview devtools
+	globalThis.__model = model; // pokeable from devtools
 
 	setupPhysics(model, config);
 	setupInteraction(app, model, modelConfig);
 
-	// Both features keep the app running if they fail (e.g. camera denied).
+	// Guarded so the app survives camera denial / missing expression assets.
 	startFaceTracking(model, config, modelConfig).catch((err) =>
 		console.warn("Face tracking disabled:", err),
 	);

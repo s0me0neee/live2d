@@ -1,8 +1,8 @@
 // Move/resize guide for the overlay window, shown only while unlocked. The
-// window is frameless + focusable:false (no native title bar / resize borders),
-// so we drive it from the renderer: read the bounds at grab time, then translate
-// the pointer's GLOBAL screenX/Y movement (unaffected by the window moving under
-// the cursor) into new bounds. No-op outside Electron.
+// frameless focusable:false window has no native title bar / resize borders, so
+// we drive it from the renderer: read the bounds at grab time, then translate the
+// pointer's GLOBAL screenX/Y movement (unaffected by the window moving under the
+// cursor) into new bounds. No-op outside Electron.
 
 interface Bounds {
 	x: number;
@@ -21,37 +21,28 @@ const MIN_H = 150;
 
 export function setupWindowControls(): void {
 	const api = window.electronAPI;
-	if (!api?.windowControls) return; // not running under Electron
+	if (!api?.windowControls) return;
 
 	const wc = api.windowControls;
 	const { root, bar, handles } = buildGuide();
 	document.body.appendChild(root);
 
-	// Visible only when unlocked (clickable). When locked the overlay is click-
-	// through, so the guide would be both unreachable and just paint over the
-	// game underneath — hide it. Lock state arrives from the main process
-	// (tray / Cmd+Alt+L hotkey / IPC), so mirror every change.
+	// Hidden when locked: click-through would make it unreachable and it would
+	// just paint over the game. Lock state comes from main (tray / hotkey / IPC).
 	const setShown = (locked: boolean) => {
 		root.style.display = locked ? "none" : "block";
 	};
 	api.overlay.getLock().then(setShown).catch(() => setShown(false));
 	api.overlay.onLockChanged(setShown);
 
-	// Drag bar → move the window (translate both axes, keep size).
-	wireDrag(bar, wc, (b, dx, dy) => ({
-		x: b.x + dx,
-		y: b.y + dy,
-		width: b.width,
-		height: b.height,
-	}));
-
-	// Corner handles → resize, anchoring the opposite corner.
+	// Drag bar moves the window; corner handles resize it.
+	wireDrag(bar, wc, (b, dx, dy) => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height }));
 	for (const corner of CORNERS) {
 		wireDrag(handles[corner], wc, (b, dx, dy) => resize(corner, b, dx, dy));
 	}
 }
 
-/** New bounds for dragging `corner` by (dx, dy), keeping the far corner fixed. */
+// New bounds for dragging `corner` by (dx, dy), keeping the far corner fixed.
 function resize(corner: Corner, b: Bounds, dx: number, dy: number): Bounds {
 	let { x, y, width, height } = b;
 	if (corner.includes("e")) width = b.width + dx;
@@ -64,9 +55,8 @@ function resize(corner: Corner, b: Bounds, dx: number, dy: number): Bounds {
 		y = b.y + dy;
 		height = b.height - dy;
 	}
-	// Clamp to a minimum; when dragging a west/north edge, pin the far edge.
 	if (width < MIN_W) {
-		if (corner.includes("w")) x = b.x + b.width - MIN_W;
+		if (corner.includes("w")) x = b.x + b.width - MIN_W; // pin the far edge
 		width = MIN_W;
 	}
 	if (height < MIN_H) {
@@ -76,11 +66,8 @@ function resize(corner: Corner, b: Bounds, dx: number, dy: number): Bounds {
 	return { x, y, width, height };
 }
 
-/**
- * Make `el` drag the window: on pointerdown snapshot the live bounds + global
- * cursor; on pointermove feed (start, dx, dy) through `compute` and push the
- * result, coalesced to one setBounds per animation frame.
- */
+// Snapshot bounds + global cursor on pointerdown, feed (start, dx, dy) through
+// `compute` on move, push the result coalesced to one setBounds per frame.
 function wireDrag(
 	el: HTMLElement,
 	wc: WindowControls,
@@ -104,7 +91,7 @@ function wireDrag(
 		try {
 			el.setPointerCapture(e.pointerId);
 		} catch {
-			/* capture is best-effort; the window tracks the cursor without it */
+			// best-effort; the window tracks the cursor without capture
 		}
 		const bounds = await wc.getBounds();
 		if (bounds) start = { sx: e.screenX, sy: e.screenY, bounds };
@@ -122,7 +109,7 @@ function wireDrag(
 		try {
 			el.releasePointerCapture(e.pointerId);
 		} catch {
-			/* may already be released */
+			// already released
 		}
 	};
 	el.addEventListener("pointerup", end);

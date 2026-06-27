@@ -25,6 +25,9 @@ declare global {
 				} | null>;
 				setBounds(b: { x: number; y: number; width: number; height: number }): void;
 			};
+			faceTracking: {
+				onRecenter(cb: () => void): () => void;
+			};
 		};
 	}
 	// eslint-disable-next-line no-var

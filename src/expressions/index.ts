@@ -13,19 +13,12 @@ interface LoadedExpression {
 	checkbox?: HTMLInputElement;
 }
 
-/**
- * Loads the model's discovered expressions, builds a toggle panel + keyboard
- * shortcuts, and applies expression parameters to the model.
- *
- * These are independent outfit/face toggles (a dedicated "Add" param each), so
- * several can be on at once. Cubism keeps the last value we write, so we apply
- * params imperatively on toggle (no per-frame work) and reset to default on off.
- * The on/off state is restored from, and persisted back into, the model's TOML.
- */
+// Independent outfit/face toggles: several can be on at once. Applied imperatively
+// on toggle (Cubism keeps the last written value) and reset to default on off.
+// On/off state is restored from, and persisted back into, the model's TOML.
 export async function setupExpressions(model: Live2DModel, modelConfig: ModelConfig): Promise<void> {
-	const entries = Object.entries(modelConfig.expressions);
 	const defs: LoadedExpression[] = await Promise.all(
-		entries.map(async ([name, e]) => {
+		Object.entries(modelConfig.expressions).map(async ([name, e]) => {
 			const data = await fetch(`/${modelConfig.location}/${e.file}`).then((r) => r.json());
 			return { name, key: e.key, params: (data.Parameters ?? []) as ExpParam[] };
 		}),
@@ -33,7 +26,7 @@ export async function setupExpressions(model: Live2DModel, modelConfig: ModelCon
 
 	const cm = (model.internalModel as any).coreModel;
 
-	// Each expression param's default ("off") value, captured before any change.
+	// Each param's default ("off") value, captured before any expression changes it.
 	const offValue = new Map<string, number>();
 	for (const d of defs) {
 		for (const p of d.params) {
@@ -56,7 +49,6 @@ export async function setupExpressions(model: Live2DModel, modelConfig: ModelCon
 
 	buildPanel(defs, setActive);
 
-	// Restore saved on-state without re-persisting it back.
 	for (const d of defs) {
 		if (modelConfig.expressions[d.name]?.active) setActive(d, true, false);
 	}
@@ -68,7 +60,6 @@ export async function setupExpressions(model: Live2DModel, modelConfig: ModelCon
 	});
 }
 
-/** Builds the top-right checkbox panel (styled via #expr-panel in styles.css). */
 function buildPanel(
 	defs: LoadedExpression[],
 	setActive: (d: LoadedExpression, on: boolean) => void,

@@ -22,60 +22,47 @@ import type { Pos, WindowBounds } from "../src/config";
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // __dirname is a native global in the bundled CommonJS output (dist-electron/).
 
-// Agent/accessory activation policy — the macOS-runtime equivalent of DmNote's
-// `LSUIElement = true`. MUST run at module load, BEFORE app.whenReady(): AeroSpace
-// (and similar AX window managers) evaluate and CACHE a window's manageability the
-// instant it's created. If we wait until whenReady the app spends a brief moment as
-// a regular (Dock) app, AeroSpace latches onto the window during that phase, and it
-// gets shuffled on workspace switches. Set this early and the window is born under
-// the accessory policy → classified as a non-managed popup → stays put across spaces.
-// (Verified: setting it inside whenReady → captured; setting it here → ignored.)
+// Rebrand to "web2d". app.setName() is DISABLED: it resets the activation policy
+// below back to "regular", which makes the AeroSpace WM capture/tile the overlay.
+// app.setName("web2d");
+app.setAppUserModelId("com.web2d.app"); // Windows taskbar grouping / notifications
+process.title = "web2d"; // main-process name in `ps`
+
+// Accessory ("agent") activation policy = macOS LSUIElement. MUST run before
+// whenReady, or the app is briefly a regular (Dock) app and AeroSpace latches onto
+// the window. (app.setName() also resets it to "regular" — hence disabled above.)
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
 
-// Brand the app as "web2d" instead of the default "Electron" (menu bar, About
-// panel, app.getName()). Must run before whenReady so the name is set when the
-// app menu/process metadata is first read.
-app.setName("web2d");
-app.setAppUserModelId("com.web2d.app"); // Windows taskbar grouping / notifications
-process.title = "web2d"; // main-process name in `ps` (Activity Monitor still shows Electron until packaged)
-
-// Config IPC. The renderer fetches the resolved config once at boot, then writes
-// back the live transform / expression toggles as the user interacts. All file
-// IO lives in ./config (the model's TOML is the single source of truth).
+// Config IPC: the renderer fetches the resolved config at boot, then writes back
+// the live transform / expression toggles. All file IO lives in ./config.
 ipcMain.handle("config:get", () => loadConfig());
 ipcMain.handle("config:save-pos", (_e, pos: Pos) => savePos(pos));
 ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
 );
 
-// --- overlay window geometry -------------------------------------------------
-// The window can be moved/resized via the in-app guide (shown when unlocked).
-// Bounds persist in config.toml's [window] table (see ./config).
 const MIN_W = 200;
 const MIN_H = 150;
 
-// Last-known bounds: loaded before the first createWindow() and kept current as
-// the user drags/resizes, so re-creating the window (macOS `activate`) restores it.
+// Loaded before the first createWindow() and kept current so re-creating the
+// window (macOS `activate`) restores its geometry.
 let savedBounds: WindowBounds | null = null;
 
 let winSaveTimer: ReturnType<typeof setTimeout> | undefined;
 function persistBounds(b: WindowBounds): void {
 	savedBounds = b;
-	// Debounce: a drag/resize emits a flurry of updates; hit disk once it settles.
-	clearTimeout(winSaveTimer);
+	clearTimeout(winSaveTimer); // a drag/resize floods updates; hit disk once it settles
 	winSaveTimer = setTimeout(() => {
 		saveWindowBounds(b).catch((e) => console.warn("save window bounds failed:", e));
 	}, 400);
 }
 
-// Registered once (like registerOverlayIpc). The renderer drives the OS window
-// from its move/resize guide using global screen coordinates.
 function registerWindowIpc(): void {
 	ipcMain.handle("window:get-bounds", (): WindowBounds | null => {
 		const win = overlayWindow();
 		return win && !win.isDestroyed() ? win.getBounds() : null;
 	});
-	// Fire-and-forget (send, not invoke) so a fast drag isn't gated on round-trips.
+	// send (not invoke) so a fast drag isn't gated on round-trips.
 	ipcMain.on("window:set-bounds", (_e, b: WindowBounds) => {
 		const win = overlayWindow();
 		if (!win || win.isDestroyed()) return;
@@ -90,21 +77,16 @@ function registerWindowIpc(): void {
 	});
 }
 
-// Whether the overlay is click-through. When locked, mouse events fall through
-// to whatever is underneath (the game/desktop) — DmNote's `overlay_locked`.
+// When locked, clicks fall through to whatever is underneath.
 let overlayLocked = false;
 
-// Set by createTray() so a lock change from any source (menu, hotkey, IPC) keeps
-// the tray menu label in sync.
-let refreshTrayMenu: () => void = () => {};
+// Set by createTray() so a lock change from any source keeps the menu label in sync.
+let refreshTrayMenu: () => void = () => { };
 
 function setOverlayLock(win: BrowserWindow, locked: boolean): void {
 	overlayLocked = locked;
-	// A window can be torn down between a caller grabbing it and this running
-	// (hotkey/tray callbacks fire async); touching a destroyed window throws.
-	if (win.isDestroyed()) return;
-	// forward:true still delivers mousemove to the renderer (for hover) while
-	// clicks pass through — matches Tauri's set_ignore_cursor_events behavior.
+	if (win.isDestroyed()) return; // hotkey/tray callbacks fire async; window may be gone
+	// forward:true still delivers mousemove (for hover) while clicks pass through.
 	win.setIgnoreMouseEvents(locked, { forward: true });
 	win.webContents.send("overlay:lock-changed", locked);
 	refreshTrayMenu();
@@ -114,8 +96,7 @@ function overlayWindow(): BrowserWindow | undefined {
 	return BrowserWindow.getAllWindows()[0];
 }
 
-// Registered once (not per-window) so re-creating the window on macOS `activate`
-// can't double-register a handler. Each call targets the current overlay window.
+// Registered once (not per-window) so re-creating the window can't double-register.
 function registerOverlayIpc(): void {
 	ipcMain.handle("overlay:set-lock", (_e, locked: boolean) => {
 		const win = overlayWindow();
@@ -135,22 +116,18 @@ function createWindow(): void {
 		title: "web2d",
 		width: b?.width ?? 800,
 		height: b?.height ?? 600,
-		// Only pass x/y when we have a saved position; otherwise let Electron center.
-		...(b ? { x: b.x, y: b.y } : {}),
+		...(b ? { x: b.x, y: b.y } : {}), // saved position, else let Electron center
 		minWidth: MIN_W,
 		minHeight: MIN_H,
 		transparent: true,
-		frame: false, // no title bar / borders
+		frame: false,
 		alwaysOnTop: true,
 		hasShadow: false,
 		backgroundColor: "#00000000",
 		resizable: true,
-		// Never become key/main: the overlay must not steal focus from the app
-		// underneath. Equivalent to DmNote's macOS set_focusable(false).
-		focusable: false,
+		focusable: false, // never steal focus from the app underneath
 		skipTaskbar: true,
-		// Shown without activation via showInactive() once content is ready.
-		show: false,
+		show: false, // shown via showInactive() once ready
 		webPreferences: {
 			preload: join(__dirname, "preload.cjs"),
 			contextIsolation: true,
@@ -158,20 +135,16 @@ function createWindow(): void {
 		},
 	});
 
-	// Raw AppKit: NSStatusWindowLevel + canJoinAllSpaces|fullScreenAuxiliary +
-	// hidesOnDeactivate=NO + orderFrontRegardless. This is the genuine DmNote
-	// NSWindow treatment; we drive the window level from AppKit rather than
-	// Electron's setAlwaysOnTop level so the behavior matches exactly.
+	// The genuine DmNote NSWindow treatment (status level, joins all Spaces, floats
+	// over fullscreen, no hide-on-deactivate). AppKit can reset it on reorder, so
+	// re-assert on show/blur.
 	applyMacOverlay(win);
-	// AppKit can reset the level/ordering when the window is reordered, so
-	// re-assert on the events where that happens — as DmNote does on focus loss.
 	win.on("show", () => applyMacOverlay(win));
 	win.on("blur", () => applyMacOverlay(win));
 
 	win.once("ready-to-show", () => {
-		win.showInactive(); // show without taking focus (≈ SW_SHOWNOACTIVATE)
+		win.showInactive(); // show without taking focus
 		applyMacOverlay(win);
-		// Re-assert the current lock state on the freshly (re)created window.
 		setOverlayLock(win, overlayLocked);
 	});
 
@@ -182,13 +155,12 @@ function createWindow(): void {
 	}
 }
 
-// A 16×16 black-on-alpha template PNG (macOS recolors template images for the
-// menubar). Embedded as base64 so there's no asset-copy step in dev or prod.
+// 16×16 template PNG (macOS recolors template images for the menubar), embedded as
+// base64 so there's no asset-copy step.
 const TRAY_ICON_B64 =
 	"iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAkklEQVR4nGNgwA54gFgXiO2gWBcqRhCAFPkDcQsQrwTivVC8Eirmj88gGSAugmr4BcT/0fAvqFwRVC2GzSCJi1g0ouOLULUoLvGHmk5IMwzvheqB296Cw9m48C+oHrArdKGBRKxmGF4J1QuOJlKcj+wNO6oYQLEXKA5EiqMR5gqKEhIIUJSUkV1CdmZCN4io7AwA2haabYWpswIAAAAASUVORK5CYII=";
 
-// Held in module scope so the Tray isn't garbage-collected (which would remove
-// the menubar icon).
+// Module scope so the Tray isn't GC'd (which would drop the menubar icon).
 let tray: Tray | null = null;
 
 function createTray(): void {
@@ -207,6 +179,10 @@ function createTray(): void {
 					if (win) setOverlayLock(win, !overlayLocked);
 				},
 			},
+			{
+				label: "Recenter face tracking",
+				click: () => overlayWindow()?.webContents.send("face:recenter"),
+			},
 			{ type: "separator" },
 			{ label: "Quit", role: "quit" },
 		]);
@@ -216,13 +192,12 @@ function createTray(): void {
 }
 
 app.whenReady().then(() => {
-	// Auto-grant the webcam (face tracking) — same trust model as the Tauri app.
 	session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
-		cb(permission === "media");
+		cb(permission === "media"); // auto-grant the webcam for face tracking
 	});
 
-	// Restore the last window geometry synchronously, so createWindow() still runs
-	// in this launch tick — an async gap here lets AeroSpace capture the overlay.
+	// Synchronous so createWindow() runs in this launch tick — an async gap here
+	// lets AeroSpace capture the overlay.
 	savedBounds = loadWindowBoundsSync();
 
 	registerOverlayIpc();
@@ -230,16 +205,12 @@ app.whenReady().then(() => {
 	createTray();
 	createWindow();
 
-	// Global hotkey to toggle click-through. Required because once the overlay is
-	// click-through, the renderer can't receive a click to turn it back off.
+	// Needed because once click-through, the renderer can't receive a click to unlock.
 	const ok = globalShortcut.register("CommandOrControl+Alt+L", () => {
 		const win = overlayWindow();
 		if (win) setOverlayLock(win, !overlayLocked);
 	});
-	if (!ok) {
-		// Another app already owns the combo. The tray menu still toggles the lock.
-		console.warn("[overlay] could not register CommandOrControl+Alt+L hotkey");
-	}
+	if (!ok) console.warn("[overlay] could not register CommandOrControl+Alt+L hotkey");
 
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -248,8 +219,7 @@ app.whenReady().then(() => {
 
 app.on("will-quit", () => {
 	globalShortcut.unregisterAll();
-	// Release the menubar icon explicitly so it can't linger as a ghost.
-	tray?.destroy();
+	tray?.destroy(); // release the menubar icon so it can't linger as a ghost
 	tray = null;
 });
 

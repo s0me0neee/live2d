@@ -3,17 +3,12 @@ import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { ModelConfig } from "./config";
 import { savePos } from "./pos-store";
 
-// Absolute zoom limits (first load starts at scale 1).
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 5;
 const WHEEL_SENSITIVITY = 0.001; // higher = faster zoom per scroll tick
 
-/**
- * Lets the user drag the model with the mouse and zoom with the scroll wheel.
- * Drag grabs the model itself (not the empty canvas); zoom is anchored under the
- * cursor so the point you point at stays put. The live transform is restored
- * from (and persisted back into) the model's TOML.
- */
+// Drag the model (not the canvas) and scroll-zoom toward the cursor. The live
+// transform is restored from, and persisted back into, the model's TOML [pos].
 export function setupInteraction(
 	app: PIXI.Application,
 	model: Live2DModel,
@@ -22,14 +17,12 @@ export function setupInteraction(
 	const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 	const persist = () => savePos({ x: model.x, y: model.y, scale: model.scale.x });
 
-	// Restore the last drag/zoom (absent until the user first moves the model).
 	const saved = modelConfig.pos;
 	if (saved) {
 		model.position.set(saved.x, saved.y);
 		model.scale.set(clampScale(saved.scale));
 	}
 
-	// --- drag ---
 	model.eventMode = "static";
 	model.cursor = "grab";
 
@@ -44,8 +37,7 @@ export function setupInteraction(
 		model.cursor = "grabbing";
 	});
 
-	// Listen on the stage so the model keeps following even if the pointer
-	// briefly outruns it during a fast drag.
+	// On the stage so the model keeps following if the pointer outruns it.
 	app.stage.eventMode = "static";
 	app.stage.hitArea = app.screen;
 	app.stage.on("pointermove", (e: PIXI.FederatedPointerEvent) => {
@@ -61,7 +53,6 @@ export function setupInteraction(
 	app.stage.on("pointerup", stop);
 	app.stage.on("pointerupoutside", stop);
 
-	// --- zoom (toward the cursor) ---
 	const view = app.view as HTMLCanvasElement;
 	view.addEventListener(
 		"wheel",
@@ -70,7 +61,7 @@ export function setupInteraction(
 			const prev = model.scale.x;
 			const next = clampScale(prev * Math.exp(-e.deltaY * WHEEL_SENSITIVITY));
 			if (next === prev) return;
-			// keep the model point under the cursor fixed while scaling
+			// Keep the point under the cursor fixed while scaling.
 			const k = next / prev;
 			model.position.set(
 				e.offsetX + (model.x - e.offsetX) * k,

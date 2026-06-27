@@ -2,9 +2,33 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Rules
+## Comments
 
-Do not write unneeded comments, if the code get complex, it is ok to expend the naming of functions and variables to tell more meanings.
+Write as few comments as possible. Prefer self-documenting code: clear names
+and small, well-named functions over explanation. Default to zero comments and
+only add one when the code genuinely cannot speak for itself.
+
+Only comment to explain WHY, never WHAT:
+
+- The reason for a non-obvious approach over the obvious one.
+- Invariants or constraints the code depends on but doesn't show.
+- Workarounds — state the cause and link the issue if one exists.
+- Surprising-but-intentional behavior that looks like a bug.
+
+Never write:
+
+- Comments that restate the code (`i += 1; // increment i`).
+- Section banners, decorative dividers, or narration of obvious steps.
+- TODO/commented-out code unless explicitly asked.
+
+If a comment can be eliminated by renaming a variable or extracting a function,
+do that instead of commenting.
+
+Doc comments (e.g. Rust `///`) on public APIs are the exception: keep them where
+they describe contract/usage for consumers, even when the implementation is obvious.
+
+A comment is a maintenance liability that can rot out of sync with the code, so
+each one must earn its place. If unsure, leave it out.
 
 ## What this is
 

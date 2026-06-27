@@ -1,19 +1,11 @@
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { Config } from "./config";
 
-/**
- * Tunes the model's pendulum physics (the hair/cloth sim) from config.physics:
- *  - springiness: scales every strand's mobility (velocity retention => bounce)
- *  - wind: a steady breeze added to every strand, optionally gusting
- *
- * These change the simulation itself, unlike hair/clothesGain which just scale
- * the resulting amplitude. Reaches into the Cubism runtime's private fields
- * (same style as face-tracking.ts); guarded so a shape change can't break boot.
- */
+// Tunes the breath sway and the hair/cloth pendulum sim by mutating private
+// Cubism runtime fields. Guarded so a runtime shape change can't break boot.
 export function setupPhysics(model: Live2DModel, config: Config): void {
-	const internal = (model.internalModel as any);
+	const internal = model.internalModel as any;
 
-	// breath: scale the idle sine (head sway + ParamBreath). 0 kills it entirely.
 	const breath: number = config.breath;
 	if (breath === 0) {
 		internal.breath = undefined; // updateNaturalMovements guards with ?.
@@ -27,7 +19,6 @@ export function setupPhysics(model: Live2DModel, config: Config): void {
 	if (!physics) return;
 	const p = config.physics;
 
-	// springiness: higher mobility => velocity carries further => more overshoot
 	const springiness: number = p.springiness;
 	if (springiness !== 1) {
 		for (const particle of physics._physicsRig?.particles ?? []) {
@@ -35,7 +26,6 @@ export function setupPhysics(model: Live2DModel, config: Config): void {
 		}
 	}
 
-	// wind: evaluate() reads these live each frame, so the gust loop takes effect
 	if (!p.windEnabled) return;
 	const wind = physics.getOption?.().wind;
 	if (!wind) return;

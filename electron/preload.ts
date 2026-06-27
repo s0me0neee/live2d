@@ -39,4 +39,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		getBounds: (): Promise<Bounds | null> => ipcRenderer.invoke("window:get-bounds"),
 		setBounds: (b: Bounds): void => ipcRenderer.send("window:set-bounds", b),
 	},
+
+	faceTracking: {
+		// Fires when the tray "recenter" item is clicked. Returns an unsubscribe fn.
+		onRecenter: (cb: () => void): (() => void) => {
+			const listener = () => cb();
+			ipcRenderer.on("face:recenter", listener);
+			return () => ipcRenderer.removeListener("face:recenter", listener);
+		},
+	},
 });
