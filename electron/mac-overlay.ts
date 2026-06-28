@@ -8,7 +8,9 @@
 // scripts/build-electron.mjs) so its prebuilt .node resolves at runtime.
 import koffi from "koffi";
 import type { BrowserWindow } from "electron";
+import { createLogger } from "./log";
 
+const log = createLogger("overlay");
 const isMac = process.platform === "darwin";
 
 // NSWindowLevel — NSStatusWindowLevel (25) floats above normal and floating
@@ -49,10 +51,11 @@ function objc(): ObjcBridge | null {
 			sendULong: lib.func("objc_msgSend", "void", ["void *", "void *", "unsigned long"]),
 			sendBool: lib.func("objc_msgSend", "void", ["void *", "void *", "bool"]),
 		};
+		log.ok("AppKit FFI bridge loaded (NSWindow overlay tweaks active)");
 		return bridge;
 	} catch (err) {
 		bridgeFailed = true;
-		console.warn("[overlay] AppKit FFI unavailable, skipping native tweaks:", err);
+		log.warn("AppKit FFI unavailable, skipping native tweaks:", err);
 		return null;
 	}
 }

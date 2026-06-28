@@ -1,6 +1,9 @@
 import { protocol } from "electron";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createLogger, color } from "./log";
+
+const log = createLogger("model");
 
 // Custom scheme for serving Live2D model assets that live OUTSIDE the project root
 // (so Vite/file:// can't reach them). The renderer builds URLs as
@@ -41,13 +44,17 @@ const mimeFor = (p: string) => MIME[p.split(".").pop()?.toLowerCase() ?? ""] ?? 
 export function handleModelProtocol(isAllowed: (filePath: string) => boolean): void {
 	protocol.handle(MODEL_SCHEME, async (request) => {
 		const filePath = resolve(decodeURIComponent(new URL(request.url).pathname));
-		if (!isAllowed(filePath)) return new Response("forbidden", { status: 403 });
+		if (!isAllowed(filePath)) {
+			log.warn(`blocked read outside allowed roots: ${color.dim(filePath)}`);
+			return new Response("forbidden", { status: 403 });
+		}
 		try {
 			const data = await readFile(filePath);
 			return new Response(data, {
 				headers: { "content-type": mimeFor(filePath), "access-control-allow-origin": "*" },
 			});
 		} catch {
+			log.warn(`asset not found: ${color.dim(filePath)}`);
 			return new Response("not found", { status: 404 });
 		}
 	});
