@@ -2,24 +2,51 @@
 <html lang="en">
 
 <head>
+	<meta charset="utf-8" />
 	<title>web2d settings</title>
 	<link rel="stylesheet" href="/src/settings/styles.css" />
 </head>
 
 <body>
 	<main class="panel">
-		<h1>Settings</h1>
+		<header class="header">
+			<h1>Settings</h1>
+			<p class="subtitle">Global shortcuts</p>
+		</header>
 
-		<section class="row">
-			<div class="label">
-				<div class="name">Overlay lock shortcut</div>
-				<div class="hint">Global hotkey that toggles click-through.</div>
-			</div>
-			<div class="control">
-				<button id="record" class="hotkey">…</button>
-				<div id="status" class="status"></div>
-			</div>
-		</section>
+		<div class="card">
+			<section class="row">
+				<div class="label">
+					<div class="name">Overlay lock</div>
+					<div class="hint">Toggle click-through</div>
+				</div>
+				<div class="control">
+					<div class="buttons">
+						<button class="hotkey" data-hotkey="lock">…</button>
+						<button class="clear" data-clear="lock" title="Unbind" aria-label="Unbind">✕</button>
+					</div>
+					<div class="status" data-status="lock"></div>
+				</div>
+			</section>
+
+			<div class="divider"></div>
+
+			<section class="row">
+				<div class="label">
+					<div class="name">Recenter face tracking</div>
+					<div class="hint">Reset the head pose to neutral</div>
+				</div>
+				<div class="control">
+					<div class="buttons">
+						<button class="hotkey" data-hotkey="recenter">…</button>
+						<button class="clear" data-clear="recenter" title="Unbind" aria-label="Unbind">✕</button>
+					</div>
+					<div class="status" data-status="recenter"></div>
+				</div>
+			</section>
+		</div>
+
+		<p class="footnote">Click a shortcut to rebind · <kbd>Esc</kbd> cancels · <kbd>⌫</kbd> unbinds</p>
 	</main>
 	<script type="module" src="./src/settings/main.ts"></script>
 </body>

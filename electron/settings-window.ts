@@ -1,8 +1,10 @@
 import { app, BrowserWindow } from "electron";
 import { join } from "node:path";
 import { forwardConsole } from "./forward-console";
+import { createLogger } from "./log";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
+const log = createLogger("settings");
 
 // Single instance: reopening focuses the existing window instead of stacking.
 let settingsWin: BrowserWindow | null = null;
@@ -17,7 +19,7 @@ export function openSettings(): void {
 	// capture a shortcut, so it gets no applyMacOverlay treatment.
 	const win = new BrowserWindow({
 		width: 440,
-		height: 220,
+		height: 320,
 		title: "web2d settings",
 		resizable: false,
 		fullscreenable: false,
@@ -30,6 +32,7 @@ export function openSettings(): void {
 		},
 	});
 	settingsWin = win;
+	log.info("opening settings window");
 	forwardConsole(win.webContents, "settings");
 	win.on("closed", () => {
 		settingsWin = null;

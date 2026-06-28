@@ -28,10 +28,14 @@ export interface Config {
 	camera: { width: number; height: number };
 
 	lockHotkey: string;
+	recenterHotkey: string;
 
 	showFps: boolean;
 	showExpressions: boolean;
 }
+
+// The two configurable global shortcuts. "" = unbound.
+export type HotkeyId = "lock" | "recenter";
 
 export const DEFAULT_CONFIG: Config = {
 	mirror: true,
@@ -53,6 +57,7 @@ export const DEFAULT_CONFIG: Config = {
 	detectFps: 60,
 	camera: { width: 1080, height: 960 },
 	lockHotkey: "CommandOrControl+Alt+L",
+	recenterHotkey: "CommandOrControl+Alt+R",
 	showFps: true,
 	showExpressions: true,
 };

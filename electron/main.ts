@@ -13,28 +13,34 @@ import { applyMacOverlay } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
 import { openSettings } from "./settings-window";
+import { createLogger, color } from "./log";
 import {
 	loadConfig,
-	loadHotkeySync,
+	loadHotkeysSync,
 	loadUiTogglesSync,
 	loadWindowBoundsSync,
 	savePosSync,
 	saveUiToggle,
 	saveWindowBounds,
 	setExpressionActive,
-	setLockHotkey,
+	setHotkey,
 	type UiToggle,
 } from "./config";
-import { DEFAULT_CONFIG, type Pos, type WindowBounds } from "../src/config";
+import { DEFAULT_CONFIG, type HotkeyId, type Pos, type WindowBounds } from "../src/config";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // __dirname is a native global in the bundled CommonJS output (dist-electron/).
+
+const log = createLogger("main");
 
 // Accessory ("agent") activation policy = macOS LSUIElement. MUST run before
 // whenReady, or the app is briefly a regular (Dock) app and AeroSpace latches onto
 // the window. We deliberately don't call app.setName() to rebrand: it flips the
 // policy back to "regular", which re-exposes the overlay to AeroSpace.
-if (process.platform === "darwin") app.setActivationPolicy("accessory");
+if (process.platform === "darwin") {
+	app.setActivationPolicy("accessory");
+	log.debug("activation policy → accessory (LSUIElement)");
+}
 
 // Must be registered before app `ready`.
 registerModelScheme();
@@ -53,7 +59,17 @@ const isAllowedModelPath = (filePath: string): boolean => {
 // the live transform / expression toggles. All file IO lives in ./config.
 ipcMain.handle("config:get", async () => {
 	const cfg = await loadConfig();
-	if (cfg.model.resolvedLocation) allowedModelRoots.add(cfg.model.resolvedLocation);
+	if (cfg.model.resolvedLocation) {
+		allowedModelRoots.add(cfg.model.resolvedLocation);
+		log.info(
+			`model ${color.bold(cfg.modelName)} → ${color.dim(cfg.model.resolvedLocation)}`,
+			color.gray(
+				`(${Object.keys(cfg.model.gain).length} gain, ${Object.keys(cfg.model.expressions).length} expressions)`,
+			),
+		);
+	} else {
+		log.warn(`model ${color.bold(cfg.modelName)} has no resolvable location — nothing will load`);
+	}
 	return cfg;
 });
 // The renderer reports the live model transform as it changes; we hold it in memory
@@ -65,10 +81,10 @@ ipcMain.on("pos:report", (_e, pos: Pos) => {
 ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
 );
-ipcMain.handle("config:get-hotkey", () => lockHotkey);
-ipcMain.handle("config:set-hotkey", async (_e, accelerator: string) => {
-	if (typeof accelerator !== "string" || !registerLockHotkey(accelerator)) return false;
-	await setLockHotkey(accelerator);
+ipcMain.handle("config:get-hotkey", (_e, id: HotkeyId) => (id in hotkeys ? hotkeys[id] : ""));
+ipcMain.handle("config:set-hotkey", async (_e, id: HotkeyId, accelerator: string) => {
+	if (typeof accelerator !== "string" || !(id in hotkeys) || !applyHotkey(id, accelerator)) return false;
+	await setHotkey(id, accelerator);
 	return true;
 });
 
@@ -84,7 +100,7 @@ function persistBounds(b: WindowBounds): void {
 	savedBounds = b;
 	clearTimeout(winSaveTimer); // a drag/resize floods updates; hit disk once it settles
 	winSaveTimer = setTimeout(() => {
-		saveWindowBounds(b).catch((e) => console.warn("save window bounds failed:", e));
+		saveWindowBounds(b).catch((e) => log.warn("save window bounds failed:", e));
 	}, 400);
 }
 
@@ -121,6 +137,7 @@ function setOverlayLock(win: BrowserWindow, locked: boolean): void {
 	win.setIgnoreMouseEvents(locked, { forward: true });
 	win.webContents.send("overlay:lock-changed", locked);
 	refreshTrayMenu();
+	log.info(`overlay ${locked ? color.yellow("locked (click-through)") : color.green("unlocked (clickable)")}`);
 }
 
 // Tracked so it's distinguishable from the settings window (also a BrowserWindow).
@@ -134,29 +151,45 @@ function toggleLock(): void {
 	if (win) setOverlayLock(win, !overlayLocked);
 }
 
-// The global hotkey that toggles the lock. Set from config at boot, re-bound from
-// the settings window. Essential because once click-through the renderer can't
-// receive a click to unlock.
-let lockHotkey = DEFAULT_CONFIG.lockHotkey;
+// The configurable global shortcuts and the action each fires. The lock hotkey is
+// essential because once click-through the renderer can't receive a click to
+// unlock; recenter mirrors the tray "Recenter face tracking" item. "" = unbound.
+const HOTKEY_ACTION: Record<HotkeyId, () => void> = {
+	lock: toggleLock,
+	recenter: () => {
+		log.info("recenter face tracking");
+		overlayWindow()?.webContents.send("face:recenter");
+	},
+};
+const hotkeys: Record<HotkeyId, string> = {
+	lock: DEFAULT_CONFIG.lockHotkey,
+	recenter: DEFAULT_CONFIG.recenterHotkey,
+};
 
-// Registers the new accelerator BEFORE dropping the old one, so a failure (invalid
-// or already-taken accelerator — register can even throw) leaves the previous
-// binding intact rather than unbinding everything. Returns false on failure so the
-// settings UI can report it.
-function registerLockHotkey(accelerator: string): boolean {
-	if (accelerator === lockHotkey && globalShortcut.isRegistered(accelerator)) return true;
+// Binds `accelerator` to the hotkey's action, replacing any previous binding. ""
+// unbinds (no shortcut). Registers the new accelerator BEFORE dropping the old one
+// so a failure (invalid or already-taken accelerator — register can even throw)
+// leaves the previous binding intact. Returns false only when a non-empty
+// accelerator can't be registered, so the settings UI can report it.
+function applyHotkey(id: HotkeyId, accelerator: string): boolean {
+	const prev = hotkeys[id];
+	const isBound = (a: string) => a !== "" && globalShortcut.isRegistered(a);
+	if (accelerator === prev && (accelerator === "" || isBound(accelerator))) return true;
 
-	let registered = false;
-	try {
-		registered = globalShortcut.register(accelerator, toggleLock);
-	} catch {
-		registered = false;
+	if (accelerator !== "") {
+		let registered = false;
+		try {
+			registered = globalShortcut.register(accelerator, HOTKEY_ACTION[id]);
+		} catch {
+			registered = false;
+		}
+		if (!registered) return false;
 	}
-	if (!registered) return false;
 
-	if (lockHotkey !== accelerator) globalShortcut.unregister(lockHotkey);
-	lockHotkey = accelerator;
+	if (prev !== "" && prev !== accelerator) globalShortcut.unregister(prev);
+	hotkeys[id] = accelerator;
 	refreshTrayMenu();
+	log.info(`hotkey ${color.bold(id)} → ${accelerator ? color.cyan(accelerator) : color.gray("(unbound)")}`);
 	return true;
 }
 
@@ -174,7 +207,8 @@ const UI_CHANNEL: Record<UiToggle, string> = {
 function setUiToggle(key: UiToggle, value: boolean): void {
 	uiToggles[key] = value;
 	overlayWindow()?.webContents.send(UI_CHANNEL[key], value);
-	saveUiToggle(key, value).catch((e) => console.warn(`save ${key} failed:`, e));
+	log.info(`${key} ${value ? color.green("on") : color.gray("off")}`);
+	saveUiToggle(key, value).catch((e) => log.warn(`save ${key} failed:`, e));
 }
 
 // Registered once (not per-window) so re-creating the window can't double-register.
@@ -240,10 +274,14 @@ function createWindow(): void {
 	});
 
 	if (DEV_URL) {
+		log.info(`loading renderer from ${color.cyan(DEV_URL)}`);
 		win.loadURL(DEV_URL);
 	} else {
 		win.loadFile(join(__dirname, "../dist/index.html"));
 	}
+	log.ok(
+		`overlay window created ${color.gray(b ? `restored ${b.width}×${b.height} @ (${b.x},${b.y})` : "centered (no saved bounds)")}`,
+	);
 }
 
 // 16×16 template PNG (macOS recolors template images for the menubar), embedded as
@@ -264,12 +302,13 @@ function createTray(): void {
 		const menu = Menu.buildFromTemplate([
 			{
 				label: overlayLocked ? "Unlock (make clickable)" : "Lock (click-through)",
-				accelerator: lockHotkey,
+				accelerator: hotkeys.lock || undefined,
 				click: toggleLock,
 			},
 			{
 				label: "Recenter face tracking",
-				click: () => overlayWindow()?.webContents.send("face:recenter"),
+				accelerator: hotkeys.recenter || undefined,
+				click: HOTKEY_ACTION.recenter,
 			},
 			{
 				// No live re-apply path yet; reloading the renderer re-fetches the
@@ -300,7 +339,10 @@ function createTray(): void {
 }
 
 app.whenReady().then(() => {
+	log.ok(`web2d ready ${color.gray(`(electron ${process.versions.electron}, node ${process.versions.node})`)}`);
+
 	session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
+		if (permission === "media") log.info("granting webcam permission for face tracking");
 		cb(permission === "media"); // auto-grant the webcam for face tracking
 	});
 
@@ -316,9 +358,11 @@ app.whenReady().then(() => {
 	createTray();
 	createWindow();
 
-	lockHotkey = loadHotkeySync();
-	if (!registerLockHotkey(lockHotkey)) {
-		console.warn(`[overlay] could not register lock hotkey "${lockHotkey}"`);
+	const saved = loadHotkeysSync();
+	for (const id of Object.keys(hotkeys) as HotkeyId[]) {
+		if (!applyHotkey(id, saved[id])) {
+			log.error(`could not register ${id} hotkey "${saved[id]}" — in use by another app?`);
+		}
 	}
 
 	app.on("activate", () => {
@@ -327,10 +371,14 @@ app.whenReady().then(() => {
 });
 
 app.on("will-quit", () => {
-	if (lastReportedPos) savePosSync(lastReportedPos);
+	if (lastReportedPos) {
+		log.info(`saving model position ${color.gray(`(${lastReportedPos.x.toFixed(0)},${lastReportedPos.y.toFixed(0)} @ ${lastReportedPos.scale.toFixed(2)}×)`)}`);
+		savePosSync(lastReportedPos);
+	}
 	globalShortcut.unregisterAll();
 	tray?.destroy(); // release the menubar icon so it can't linger as a ghost
 	tray = null;
+	log.info("quit");
 });
 
 app.on("window-all-closed", () => {

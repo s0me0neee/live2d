@@ -3,12 +3,14 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { app } from "electron";
 import { parse, stringify } from "smol-toml";
+import { createLogger, color } from "./log";
 import {
 	DEFAULT_CONFIG,
 	DEFAULT_MODEL_CONFIG,
 	type Config,
 	type Expression,
 	type GainSetting,
+	type HotkeyId,
 	type ModelConfig,
 	type Pos,
 	type ResolvedConfig,
@@ -25,6 +27,8 @@ const modelsDir = join(appConfigDir, "models");
 
 const EXP_SUFFIX = ".exp3.json";
 const EXPRESSION_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+
+const log = createLogger("config");
 
 let activeModelName = "";
 
@@ -59,22 +63,31 @@ export async function saveWindowBounds(bounds: WindowBounds): Promise<void> {
 	await writeToml(configFile, root);
 }
 
-// Read synchronously so the hotkey can be registered in the same launch tick as
-// the window (see loadWindowBoundsSync).
-export function loadHotkeySync(): string {
+const HOTKEY_TOML_KEY: Record<HotkeyId, "lockHotkey" | "recenterHotkey"> = {
+	lock: "lockHotkey",
+	recenter: "recenterHotkey",
+};
+
+// Read synchronously so the hotkeys can be registered in the same launch tick as
+// the window (see loadWindowBoundsSync). An explicit "" is preserved (= unbound);
+// only an absent/non-string value falls back to the default.
+export function loadHotkeysSync(): Record<HotkeyId, string> {
+	const read = (root: Record<string, unknown>, id: HotkeyId): string => {
+		const tomlKey = HOTKEY_TOML_KEY[id];
+		const v = root[tomlKey];
+		return typeof v === "string" ? v : DEFAULT_CONFIG[tomlKey];
+	};
 	try {
 		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
-		return typeof root.lockHotkey === "string" && root.lockHotkey
-			? root.lockHotkey
-			: DEFAULT_CONFIG.lockHotkey;
+		return { lock: read(root, "lock"), recenter: read(root, "recenter") };
 	} catch {
-		return DEFAULT_CONFIG.lockHotkey;
+		return { lock: DEFAULT_CONFIG.lockHotkey, recenter: DEFAULT_CONFIG.recenterHotkey };
 	}
 }
 
-export async function setLockHotkey(accelerator: string): Promise<void> {
+export async function setHotkey(id: HotkeyId, accelerator: string): Promise<void> {
 	const root = await readToml(configFile);
-	root.lockHotkey = accelerator;
+	root[HOTKEY_TOML_KEY[id]] = accelerator;
 	await writeToml(configFile, root);
 }
 
@@ -109,7 +122,7 @@ export function savePosSync(pos: Pos): void {
 		raw.pos = pos;
 		writeFileSync(file, stringify(raw));
 	} catch (e) {
-		console.warn("[config] savePosSync failed:", e);
+		log.warn("savePosSync failed:", e);
 	}
 }
 
@@ -309,15 +322,15 @@ async function patchModel(mutate: (raw: Record<string, unknown>) => void): Promi
 // persisting that would wipe the user's saved values.
 function isModelLoadable(m: ModelConfig): boolean {
 	if (!m.location || !m.model) {
-		console.warn("[config] model needs both `location` and `model` to load");
+		log.warn("model needs both `location` and `model` to load");
 		return false;
 	}
 	if (!m.model.endsWith(".model3.json")) {
-		console.warn(`[config] "${m.model}" is not a .model3.json file`);
+		log.warn(`"${m.model}" is not a .model3.json file`);
 	}
 	const modelPath = join(resolveModelDir(m.location), m.model);
 	if (!existsSync(modelPath)) {
-		console.warn(`[config] model file not found: ${modelPath}`);
+		log.error(`model file not found: ${color.dim(modelPath)}`);
 		return false;
 	}
 	return true;

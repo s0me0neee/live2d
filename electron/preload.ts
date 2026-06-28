@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { Pos, ResolvedConfig } from "../src/config";
+import type { HotkeyId, Pos, ResolvedConfig } from "../src/config";
 
 export interface Bounds {
 	x: number;
@@ -50,12 +50,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		},
 	},
 
-	// Read / rebind the global lock-toggle accelerator (settings window). set()
-	// resolves false if the accelerator is invalid or already taken.
+	// Read / rebind a global accelerator (settings window). "" unbinds it. set()
+	// resolves false if a non-empty accelerator is invalid or already taken.
 	hotkey: {
-		get: (): Promise<string> => ipcRenderer.invoke("config:get-hotkey"),
-		set: (accelerator: string): Promise<boolean> =>
-			ipcRenderer.invoke("config:set-hotkey", accelerator),
+		get: (id: HotkeyId): Promise<string> => ipcRenderer.invoke("config:get-hotkey", id),
+		set: (id: HotkeyId, accelerator: string): Promise<boolean> =>
+			ipcRenderer.invoke("config:set-hotkey", id, accelerator),
 	},
 
 	// Live show/hide of the FPS counter and expression list, toggled from the tray.

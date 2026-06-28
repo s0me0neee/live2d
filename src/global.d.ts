@@ -1,6 +1,6 @@
 import type * as PIXI from "pixi.js";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import type { Pos, ResolvedConfig } from "./config";
+import type { HotkeyId, Pos, ResolvedConfig } from "./config";
 
 declare global {
 	interface Window {
@@ -29,8 +29,8 @@ declare global {
 				onRecenter(cb: () => void): () => void;
 			};
 			hotkey: {
-				get(): Promise<string>;
-				set(accelerator: string): Promise<boolean>;
+				get(id: HotkeyId): Promise<string>;
+				set(id: HotkeyId, accelerator: string): Promise<boolean>;
 			};
 			ui: {
 				onShowFps(cb: (visible: boolean) => void): () => void;
