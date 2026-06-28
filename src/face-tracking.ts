@@ -1,4 +1,4 @@
-import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { Config, ModelConfig } from "./config";
 
@@ -30,6 +30,12 @@ const RIG_KEYS = Object.keys(neutral()) as (keyof Rig)[];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+// Reused across detections so the per-frame mapping allocates nothing. The
+// blendshape category set is identical every frame, so overwriting keys never
+// leaves stale entries.
+const blendshapes: Record<string, number> = {};
+const blendshape = (name: string) => blendshapes[name] ?? 0;
+
 // Throws if the camera is denied/unavailable, so the caller can run without tracking.
 export async function startFaceTracking(
 	model: Live2DModel,
@@ -47,6 +53,7 @@ export async function startFaceTracking(
 	// option re-captures it.
 	const calibration: HeadCalibration = { yaw: 0, pitch: 0, roll: 0, captured: false, recenter: false };
 	window.electronAPI?.faceTracking?.onRecenter(() => {
+		console.info("[face] recenter requested — recapturing neutral head pose");
 		calibration.recenter = true;
 	});
 
@@ -79,6 +86,9 @@ async function openCamera(config: Config): Promise<HTMLVideoElement> {
 }
 
 async function createLandmarker(): Promise<FaceLandmarker> {
+	// Dynamic import keeps MediaPipe out of the entry bundle so first paint isn't
+	// blocked parsing it; it loads while the model renders.
+	const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
 	const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
 	return FaceLandmarker.createFromOptions(fileset, {
 		baseOptions: {
@@ -193,9 +203,8 @@ function driveModel(
 }
 
 function mapResult(res: any, out: Rig, config: Config, cal: HeadCalibration): void {
-	const bs: Record<string, number> = {};
-	for (const c of res.faceBlendshapes[0].categories) bs[c.categoryName] = c.score;
-	const v = (name: string) => bs[name] ?? 0;
+	for (const c of res.faceBlendshapes[0].categories) blendshapes[c.categoryName] = c.score;
+	const v = blendshape;
 
 	const { mirror, headGain, headClampDeg: lim, eyes: ec, jaw: jc } = config;
 	const ms = mirror ? -1 : 1;
