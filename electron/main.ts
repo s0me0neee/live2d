@@ -33,6 +33,31 @@ const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 
 const log = createLogger("main");
 
+// Window locking (click-through via setIgnoreMouseEvents) and the OS-window
+// move/resize guide are disabled on Linux: a Wayland client can't self-position, and
+// the only ways back out of click-through are the global hotkey (not wired for
+// Wayland) and the tray (needs an SNI host), so locking there can strand the overlay.
+// Gated on `linux` specifically — macOS works today and Windows keeps these for
+// future support.
+const IS_LINUX = process.platform === "linux";
+
+// Use the native Wayland Ozone backend on Linux instead of falling back to XWayland.
+// Under XWayland, Chromium derives devicePixelRatio from the X font DPI (e.g. 1.047
+// here) rather than the compositor's real scale, so the page lays out wider than the
+// actual window surface and right/bottom-anchored UI renders off the window edge. The
+// native backend reports the true scale and the correct window coordinates. Must be
+// set before `whenReady`. GlobalShortcutsPortal makes globalShortcut work on Wayland.
+if (IS_LINUX) {
+	app.commandLine.appendSwitch("ozone-platform-hint", "auto");
+	app.commandLine.appendSwitch("enable-features", "GlobalShortcutsPortal");
+	// Pin devicePixelRatio to 1. On this Wayland session Chromium derives a 1.046875
+	// scale despite the compositor reporting scale 1.0, so it renders a buffer ~4.7%
+	// wider than the window and clips the surplus on the right/bottom — which pushed
+	// the right-anchored expression panel off the window edge. (A HiDPI monitor at a
+	// real >1 compositor scale would want this removed.)
+	app.commandLine.appendSwitch("force-device-scale-factor", "1");
+}
+
 // Accessory ("agent") activation policy = macOS LSUIElement. MUST run before
 // whenReady, or the app is briefly a regular (Dock) app and AeroSpace latches onto
 // the window. We deliberately don't call app.setName() to rebrand: it flips the
@@ -91,6 +116,7 @@ ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 );
 ipcMain.handle("config:get-hotkey", (_e, id: HotkeyId) => (id in hotkeys ? hotkeys[id] : ""));
 ipcMain.handle("config:set-hotkey", async (_e, id: HotkeyId, accelerator: string) => {
+	if (id === "lock" && IS_LINUX) return false; // lock system disabled on Linux
 	if (typeof accelerator !== "string" || !(id in hotkeys) || !applyHotkey(id, accelerator)) return false;
 	await setHotkey(id, accelerator);
 	return true;
@@ -112,7 +138,11 @@ function persistBounds(b: WindowBounds): void {
 	}, 400);
 }
 
+// The renderer's move/resize guide drives the OS window through these. Off on Linux —
+// a Wayland client can't self-position, so setBounds(x,y) is a no-op and the guide is
+// disabled renderer-side too. macOS and Windows keep it.
 function registerWindowIpc(): void {
+	if (IS_LINUX) return;
 	ipcMain.handle("window:get-bounds", (): WindowBounds | null => {
 		const win = overlayWindow();
 		return win && !win.isDestroyed() ? win.getBounds() : null;
@@ -139,6 +169,7 @@ let overlayLocked = false;
 let refreshTrayMenu: () => void = () => { };
 
 function setOverlayLock(win: BrowserWindow, locked: boolean): void {
+	if (IS_LINUX) return; // lock disabled on Linux; overlay stays clickable
 	overlayLocked = locked;
 	if (win.isDestroyed()) return; // hotkey/tray callbacks fire async; window may be gone
 	// forward:true still delivers mousemove (for hover) while clicks pass through.
@@ -308,11 +339,15 @@ function createTray(): void {
 
 	refreshTrayMenu = () => {
 		const menu = Menu.buildFromTemplate([
-			{
-				label: overlayLocked ? "Unlock (make clickable)" : "Lock (click-through)",
-				accelerator: hotkeys.lock || undefined,
-				click: toggleLock,
-			},
+			...(IS_LINUX
+				? []
+				: [
+						{
+							label: overlayLocked ? "Unlock (make clickable)" : "Lock (click-through)",
+							accelerator: hotkeys.lock || undefined,
+							click: toggleLock,
+						},
+					]),
 			{
 				label: "Recenter face tracking",
 				accelerator: hotkeys.recenter || undefined,
@@ -368,6 +403,7 @@ app.whenReady().then(() => {
 
 	const saved = loadHotkeysSync();
 	for (const id of Object.keys(hotkeys) as HotkeyId[]) {
+		if (id === "lock" && IS_LINUX) continue; // lock system disabled on Linux
 		if (!applyHotkey(id, saved[id])) {
 			log.error(`could not register ${id} hotkey "${saved[id]}" — in use by another app?`);
 		}

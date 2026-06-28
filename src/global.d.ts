@@ -6,6 +6,7 @@ declare global {
 	interface Window {
 		PIXI: typeof PIXI;
 		electronAPI?: {
+			platform: NodeJS.Platform;
 			getConfig(): Promise<ResolvedConfig>;
 			reportPos(pos: Pos): void;
 			setExpression(name: string, active: boolean): Promise<void>;

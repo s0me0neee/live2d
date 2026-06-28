@@ -1,6 +1,13 @@
 import type { HotkeyId } from "../config";
 
 const api = window.electronAPI;
+
+// The lock system is disabled on Linux (see electron/main.ts); drop its row so the
+// rest of the wiring never sees the lock button/clear.
+if (api?.platform === "linux") {
+	for (const id of ["row-lock", "divider-lock"]) document.getElementById(id)?.remove();
+}
+
 const hotkeyButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-hotkey]"));
 
 let recording: { id: HotkeyId; btn: HTMLButtonElement } | null = null;

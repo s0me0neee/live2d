@@ -9,6 +9,9 @@ export interface Bounds {
 }
 
 contextBridge.exposeInMainWorld("electronAPI", {
+	// The host OS. The renderer gates platform-specific features off it — e.g. the
+	// OS-window move/resize guide only works on macOS (Wayland can't self-position).
+	platform: process.platform,
 	// Resolved TOML config, fetched once at boot.
 	getConfig: (): Promise<ResolvedConfig> => ipcRenderer.invoke("config:get"),
 	// Report the live transform to main (held in memory, written to the model TOML

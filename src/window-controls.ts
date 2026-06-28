@@ -2,7 +2,8 @@
 // frameless focusable:false window has no native title bar / resize borders, so
 // we drive it from the renderer: read the bounds at grab time, then translate the
 // pointer's GLOBAL screenX/Y movement (unaffected by the window moving under the
-// cursor) into new bounds. No-op outside Electron.
+// cursor) into new bounds. No-op outside Electron or on Linux (Wayland clients
+// can't self-position).
 
 interface Bounds {
 	x: number;
@@ -22,6 +23,10 @@ const MIN_H = 150;
 export function setupWindowControls(): void {
 	const api = window.electronAPI;
 	if (!api?.windowControls) return;
+	// Off on Linux: the guide moves/resizes the OS window via global cursor coords +
+	// setBounds, neither of which a Wayland client can do (no global coordinates, no
+	// self-positioning). macOS and Windows keep it.
+	if (api.platform === "linux") return;
 
 	const wc = api.windowControls;
 	const { root, bar, handles } = buildGuide();

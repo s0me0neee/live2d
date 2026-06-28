@@ -44,15 +44,26 @@ this revision; checked items are in the tree today.
       Electron 42. *(on branch `chore/bump-deps`; not yet merged — see Next up #1)*
 - [x] **Perf — quick wins** — render FPS cap, reused blendshape object (no per-frame
       alloc), MediaPipe code-split out of the entry bundle.
+- [x] **Linux platform tuning (Wayland)** — native Wayland Ozone backend
+      (`ozone-platform-hint=auto` + `ELECTRON_OZONE_PLATFORM_HINT=auto` in
+      `dev.mjs`), `GlobalShortcutsPortal` feature flag, and
+      `force-device-scale-factor=1` (this session's compositor reports scale 1.0 but
+      Chromium derived a 1.046875 DPR, rendering a buffer ~4.7% wider than the window
+      and clipping right/bottom-anchored UI — the expression panel fell off the right
+      edge). Window **lock/click-through** and the OS-window **move/resize guide** are
+      disabled on Linux, guarded on `linux` specifically so Windows keeps them.
+      (`electron/main.ts`, `src/window-controls.ts`, `settings.html`)
 
 ## Next up (ordered)
 
 ### 1. Land the dependency bump on master ✅ DONE
+
 `master` is now the Electron 42 baseline (escapes the Node-26 install breakage),
 fast-forwarded from `chore/bump-deps` and pushed. Includes the model-load CORS fix,
 recenter hotkey + redesigned/utf-8 settings, colorized logging, and the perf wins.
 
 ### 2. Performance — config wins, then structural  ← NEXT
+
 - **P0 (config only):** drop `[camera]` to ~640×480 and `detectFps` to 30. Biggest
   CPU/GPU reduction for no visible quality loss; may make P2 unnecessary.
 - **P2 (structural):** move MediaPipe inference into a **Web Worker**
@@ -60,12 +71,14 @@ recenter hotkey + redesigned/utf-8 settings, colorized logging, and the perf win
   render loop. Only pursue if P0 isn't enough under game load.
 
 ### 3. Finish Settings window v1 (the real feature, not just hotkeys)
+
 The window today configures **only hotkeys**. The original v1 scope — active-model
 picker, lock toggle, recenter button, `[gain]` sliders, expression toggles — is still
 unbuilt, and changes apply via the interim tray **"Reload config"** (full renderer
 reload) rather than live re-apply.
 
 **a. Config / IPC surface** (`electron/config.ts`, `main.ts`, `preload.ts`)
+
 - `listModels()` (basenames of `models/*.toml`), `setActiveModel(name)`,
   `setGain(name, value)` (patch `[gain].<name>` multiplier only), reuse
   `setExpressionActive`. Expose `listModels`/`setModel`/`setGain`/`onConfigChanged`.
@@ -74,6 +87,7 @@ reload) rather than live re-apply.
   renderer instead (a live model dispose/reload is too fragile for v1).
 
 **b. Overlay live-apply** (`src/main.ts` + feature modules)
+
 - Have `physics.ts` / `face-tracking.ts` / `expressions/` return a handle with an
   `apply(config, modelConfig)` step (recompute `gainGroups` on `[gain]` change,
   `setActive(name, active)` for expressions). `src/main.ts` keeps mutable
@@ -81,6 +95,7 @@ reload) rather than live re-apply.
 - This retires the tray "Reload config" workaround for scalar edits.
 
 **c. Settings UI** (`src/settings/main.ts`, `settings.html`)
+
 - Plain-DOM TS. Add sections under the existing hotkeys: model dropdown, lock toggle
   (`getLock`/`onLockChanged`/`setLock`), recenter button, a gain slider per
   `model.gain` entry (≈0–3, step 0.05), expression checkboxes (show assigned key).
@@ -93,22 +108,59 @@ reload) rather than live re-apply.
 
 ## Backlog (later platforms)
 
-### 4. Click-through on Linux/Wayland
-The toggle works on macOS; make the hotkey + click-through behave on Linux/Wayland.
+### 3.5 Fix tray checkmark icon refresh on hyprland
+
+### 3.6 For Linux add a option to add a inside boarder around the window so user can disable boarders on the window
+
+### 4. Global hotkey support on Wayland
+
+Get Electron's `globalShortcut` firing on Linux/Wayland — the recenter hotkey today,
+and lock if/when click-through is re-enabled on Linux. Notes from the Electron docs:
+
+- The shortcut is **global**: it works even when the app does **not** have the
+  keyboard focus.
+- The `globalShortcut` module **cannot be used before the `ready` event** of the app
+  module is emitted.
+- It is also possible to use Chromium's **GlobalShortcutsPortal** implementation,
+  which allows apps to bind global shortcuts when running within a Wayland session.
+  The feature flag is already enabled (`enable-features=GlobalShortcutsPortal`, see
+  Done → Linux platform tuning). On Hyprland there is **no permission prompt**: run
+  the app, `hyprctl globalshortcuts` to list the registered shortcut, then bind it
+  compositor-side (`bind = MODS, KEY, global, <name>` in `hyprland.conf`).
+
 <https://www.electronjs.org/docs/latest/api/global-shortcut>
 
-### 5. DmNote's Linux overlay technique
-How DmNote achieves always-on-top / all-workspaces / float-over-fullscreen on Linux
-(the macOS path is already mirrored).
+### 5. Disable the macOS window management system (off-mac)
 
-### 6. Windows support
-Bring the overlay behavior to Windows.
+The overlay's macOS window management must not run on Linux/Windows, where the
+overlay path is different. Gate/disable it explicitly rather than relying on silent
+no-ops:
+
+- `applyMacOverlay()` — the AppKit `NSWindow` FFI (status level, joins all Spaces,
+  float-over-fullscreen, no hide-on-deactivate) re-applied on show/blur. Already
+  no-ops off macOS; make the disable explicit. (`electron/mac-overlay.ts`)
+- `app.setActivationPolicy("accessory")` (LSUIElement) and the AeroSpace tiling-WM
+  workarounds (`closable:false` / `minimizable:false` / etc. at window creation) —
+  macOS-only; ensure they don't apply elsewhere. (`electron/main.ts`)
+
+### 6. DmNote's Linux overlay technique
+
+How DmNote achieves always-on-top / all-workspaces / float-over-fullscreen on Linux
+(the macOS path is already mirrored). The native Wayland backend already gets the
+overlay floating + on-screen; this is the remaining always-on-top / over-fullscreen
+behavior.
+
+### 7. Windows support
+
+Bring the overlay behavior to Windows. The platform guards added during Linux tuning
+are scoped to `linux` so the lock + move/resize systems remain available here.
 
 ## Notes
 
 - A previous Linux click-through attempt (renderer streams the model bbox, main
   polls the global cursor) was removed as non-working — see git history before
-  reattempting under #4/#5.
+  reattempting. Click-through is currently disabled by design on Linux (Done →
+  Linux platform tuning); revisiting it relates to #4 and #6.
 - The repo path (`rust/live2d`) and `README.md` are stale Tauri-era artifacts; the
   app is all TS/Electron now.
 - Transparent always-on-top-but-click-below reference:

@@ -1,4 +1,4 @@
-location = "/Users/maot27/Documents/live2dModels/zero"
+location = "/home/terry/Documents/models/zero"
 model = "机能少女-零.model3.json"
 
 [gain]
@@ -223,6 +223,6 @@ key = ""
 active = false
 
 [pos]
-x = 408.3514820172495
-y = 669.4341059079776
-scale = 0.29170857672112765
+x = 600.4250582657942
+y = 886.5825110655401
+scale = 0.40333007806712334

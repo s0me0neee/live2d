@@ -61,7 +61,9 @@ electron = spawn("pnpm", ["exec", "electron", "."], {
 	// fontconfig "invalid constant" warnings + Chromium's wayland teardown
 	// lines) that would otherwise bury the app's own logs.
 	stdio: ["inherit", "inherit", "pipe"],
-	env: { ...process.env, ELECTRON_RENDERER_URL: URL },
+	// ELECTRON_OZONE_PLATFORM_HINT is read earlier than the in-app commandLine switch,
+	// so set it here too to get the native Wayland backend (correct devicePixelRatio).
+	env: { ...process.env, ELECTRON_RENDERER_URL: URL, ELECTRON_OZONE_PLATFORM_HINT: "auto" },
 });
 
 const NOISE = /Fontconfig warning|wayland_event_watcher|libwayland:/;
