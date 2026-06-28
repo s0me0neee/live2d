@@ -25,7 +25,7 @@ const app = new PIXI.Application({
 	clearBeforeRender: true, // else a moving model leaves a trail
 	resolution: window.devicePixelRatio || 1, // sharp on Retina
 	autoDensity: true,
-	antialias: true,
+	antialias: false,
 });
 
 // The overlay disables vsync, so cap the framerate. Both the render ticker and the
