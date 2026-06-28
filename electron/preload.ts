@@ -11,8 +11,9 @@ export interface Bounds {
 contextBridge.exposeInMainWorld("electronAPI", {
 	// Resolved TOML config, fetched once at boot.
 	getConfig: (): Promise<ResolvedConfig> => ipcRenderer.invoke("config:get"),
-	// Persist the live transform / an expression toggle into the model's TOML.
-	savePos: (pos: Pos): Promise<void> => ipcRenderer.invoke("config:save-pos", pos),
+	// Report the live transform to main (held in memory, written to the model TOML
+	// only at quit). Fire-and-forget so dragging isn't gated on IPC round-trips.
+	reportPos: (pos: Pos): void => ipcRenderer.send("pos:report", pos),
 	setExpression: (name: string, active: boolean): Promise<void> =>
 		ipcRenderer.invoke("config:set-expression", name, active),
 

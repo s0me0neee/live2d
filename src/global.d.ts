@@ -7,7 +7,7 @@ declare global {
 		PIXI: typeof PIXI;
 		electronAPI?: {
 			getConfig(): Promise<ResolvedConfig>;
-			savePos(pos: Pos): Promise<void>;
+			reportPos(pos: Pos): void;
 			setExpression(name: string, active: boolean): Promise<void>;
 			overlay: {
 				setLock(locked: boolean): Promise<void>;

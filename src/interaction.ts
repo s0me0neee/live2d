@@ -1,7 +1,7 @@
 import type * as PIXI from "pixi.js";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { ModelConfig } from "./config";
-import { savePos } from "./pos-store";
+import { reportPos } from "./pos-store";
 
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 5;
@@ -15,7 +15,7 @@ export function setupInteraction(
 	modelConfig: ModelConfig,
 ): void {
 	const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
-	const persist = () => savePos({ x: model.x, y: model.y, scale: model.scale.x });
+	const report = () => reportPos({ x: model.x, y: model.y, scale: model.scale.x });
 
 	const saved = modelConfig.pos;
 	if (saved) {
@@ -48,7 +48,7 @@ export function setupInteraction(
 		if (!dragging) return;
 		dragging = false;
 		model.cursor = "grab";
-		persist();
+		report();
 	};
 	app.stage.on("pointerup", stop);
 	app.stage.on("pointerupoutside", stop);
@@ -68,7 +68,7 @@ export function setupInteraction(
 				e.offsetY + (model.y - e.offsetY) * k,
 			);
 			model.scale.set(next);
-			persist();
+			report();
 		},
 		{ passive: false },
 	);

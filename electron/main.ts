@@ -9,7 +9,7 @@ import {
 	Tray,
 } from "electron";
 import { join, sep } from "node:path";
-import { applyMacOverlay } from "./mac-overlay";
+import { applyMacOverlay, reassertOverlayState, removeWindowButtons } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
 import { openSettings } from "./settings-window";
@@ -18,7 +18,7 @@ import {
 	loadHotkeySync,
 	loadUiTogglesSync,
 	loadWindowBoundsSync,
-	savePos,
+	savePosSync,
 	saveUiToggle,
 	saveWindowBounds,
 	setExpressionActive,
@@ -61,7 +61,12 @@ ipcMain.handle("config:get", async () => {
 	if (cfg.model.resolvedLocation) allowedModelRoots.add(cfg.model.resolvedLocation);
 	return cfg;
 });
-ipcMain.handle("config:save-pos", (_e, pos: Pos) => savePos(pos));
+// The renderer reports the live model transform as it changes; we hold it in memory
+// and write it to the model TOML only at quit (see will-quit).
+let lastReportedPos: Pos | null = null;
+ipcMain.on("pos:report", (_e, pos: Pos) => {
+	lastReportedPos = pos;
+});
 ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
 );
@@ -104,6 +109,9 @@ function registerWindowIpc(): void {
 			height: Math.max(MIN_H, Math.round(b.height)),
 		};
 		win.setBounds(rect);
+		// A move can make AppKit drop the all-Spaces/level state; re-assert it
+		// synchronously so the overlay keeps floating over every Space after a move.
+		reassertOverlayState(win);
 		persistBounds(rect);
 	});
 }
@@ -205,7 +213,14 @@ function createWindow(): void {
 		alwaysOnTop: true,
 		hasShadow: false,
 		backgroundColor: "#00000000",
-		resizable: true,
+		// Born non-resizable (like DmNote) so the NSWindow lacks the resizable style
+		// mask and tiling WMs (AeroSpace) won't manage/tile it. The guide still
+		// moves/resizes it programmatically via setBounds — that's unaffected by the
+		// user-resize mask (verified), and resizing the NSWindow live via setStyleMask
+		// would instead fire a recursive resize storm.
+		resizable: false,
+		maximizable: false,
+		fullscreenable: false,
 		focusable: false, // never steal focus from the app underneath
 		skipTaskbar: true,
 		show: false, // shown via showInactive() once ready
@@ -220,7 +235,8 @@ function createWindow(): void {
 
 	// The genuine DmNote NSWindow treatment (status level, joins all Spaces, floats
 	// over fullscreen, no hide-on-deactivate). AppKit can reset it on reorder, so
-	// re-assert on show/blur.
+	// re-assert on show/blur. The move/resize case is handled synchronously in the
+	// window:set-bounds handler (reassertOverlayState) to beat AeroSpace's observer.
 	applyMacOverlay(win);
 	win.on("show", () => applyMacOverlay(win));
 	win.on("blur", () => applyMacOverlay(win));
@@ -228,6 +244,9 @@ function createWindow(): void {
 	win.once("ready-to-show", () => {
 		win.showInactive(); // show without taking focus
 		applyMacOverlay(win);
+		// Frameless Electron windows keep the standard NSWindow buttons; remove them so
+		// AeroSpace's isWindowHeuristic sees no close button and leaves the overlay alone.
+		removeWindowButtons(win);
 		setOverlayLock(win, overlayLocked);
 	});
 
@@ -319,6 +338,7 @@ app.whenReady().then(() => {
 });
 
 app.on("will-quit", () => {
+	if (lastReportedPos) savePosSync(lastReportedPos);
 	globalShortcut.unregisterAll();
 	tray?.destroy(); // release the menubar icon so it can't linger as a ghost
 	tray = null;

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { app } from "electron";
@@ -98,10 +98,19 @@ export async function saveUiToggle(key: UiToggle, value: boolean): Promise<void>
 	await writeToml(configFile, root);
 }
 
-export async function savePos(pos: Pos): Promise<void> {
-	await patchModel((raw) => {
+// Synchronous so it can run inside `will-quit`, where an async write wouldn't finish
+// before the process exits. [pos] is persisted only at quit (the renderer reports the
+// live transform in-memory during use) to avoid disk churn while dragging.
+export function savePosSync(pos: Pos): void {
+	const file = modelFile(activeModelName);
+	if (!existsSync(file)) return; // never create a file for an unknown model
+	try {
+		const raw = parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 		raw.pos = pos;
-	});
+		writeFileSync(file, stringify(raw));
+	} catch (e) {
+		console.warn("[config] savePosSync failed:", e);
+	}
 }
 
 export async function setExpressionActive(name: string, active: boolean): Promise<void> {
