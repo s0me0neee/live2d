@@ -72,11 +72,19 @@ ipcMain.handle("config:get", async () => {
 	}
 	return cfg;
 });
-// The renderer reports the live model transform as it changes; we hold it in memory
-// and write it to the model TOML only at quit (see will-quit).
+// The renderer reports the live model transform on each drag-stop / zoom. Persist it
+// debounced — the transform is Pixi-internal (unlike the OS window it has no AeroSpace
+// implication), so there's no reason to defer to quit, where a SIGTERM/SIGINT kill
+// (how `pnpm dev` stops) would never run will-quit and the last drag would be lost.
 let lastReportedPos: Pos | null = null;
+let posSaveTimer: ReturnType<typeof setTimeout> | undefined;
 ipcMain.on("pos:report", (_e, pos: Pos) => {
 	lastReportedPos = pos;
+	clearTimeout(posSaveTimer); // coalesce the burst of reports a wheel-zoom emits
+	posSaveTimer = setTimeout(() => {
+		log.debug(`saved model pos ${color.gray(`(${pos.x.toFixed(0)},${pos.y.toFixed(0)} @ ${pos.scale.toFixed(2)}×)`)}`);
+		savePosSync(pos);
+	}, 400);
 });
 ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
@@ -371,6 +379,7 @@ app.whenReady().then(() => {
 });
 
 app.on("will-quit", () => {
+	clearTimeout(posSaveTimer);
 	if (lastReportedPos) {
 		log.info(`saving model position ${color.gray(`(${lastReportedPos.x.toFixed(0)},${lastReportedPos.y.toFixed(0)} @ ${lastReportedPos.scale.toFixed(2)}×)`)}`);
 		savePosSync(lastReportedPos);
