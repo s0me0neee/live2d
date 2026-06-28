@@ -1,4 +1,4 @@
-model = "zero"
+model = "zero-linux"
 mirror = true
 smoothing = 0.6
 headGain = 1.1
