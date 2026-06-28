@@ -15,7 +15,14 @@ export function registerModelScheme(): void {
 	protocol.registerSchemesAsPrivileged([
 		{
 			scheme: MODEL_SCHEME,
-			privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
+			privileges: {
+				standard: true,
+				secure: true,
+				supportFetchAPI: true,
+				stream: true,
+				bypassCSP: true,
+				corsEnabled: true,
+			},
 		},
 	]);
 }
@@ -37,7 +44,9 @@ export function handleModelProtocol(isAllowed: (filePath: string) => boolean): v
 		if (!isAllowed(filePath)) return new Response("forbidden", { status: 403 });
 		try {
 			const data = await readFile(filePath);
-			return new Response(data, { headers: { "content-type": mimeFor(filePath) } });
+			return new Response(data, {
+				headers: { "content-type": mimeFor(filePath), "access-control-allow-origin": "*" },
+			});
 		} catch {
 			return new Response("not found", { status: 404 });
 		}
