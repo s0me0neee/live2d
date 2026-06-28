@@ -22,8 +22,8 @@
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {
-    "electron": "^33.4.11",
-    "esbuild": "^0.24.2",
+    "electron": "42.5.0",
+    "esbuild": "0.28.1",
     "typescript": "~6.0.3",
     "vite": "^8.1.0"
   },
