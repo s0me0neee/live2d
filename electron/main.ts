@@ -9,7 +9,7 @@ import {
 	Tray,
 } from "electron";
 import { join, sep } from "node:path";
-import { applyMacOverlay, reassertOverlayState } from "./mac-overlay";
+import { applyMacOverlay } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
 import { openSettings } from "./settings-window";
@@ -30,15 +30,10 @@ import { DEFAULT_CONFIG, type Pos, type WindowBounds } from "../src/config";
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // __dirname is a native global in the bundled CommonJS output (dist-electron/).
 
-// Rebrand to "web2d". app.setName() is DISABLED: it resets the activation policy
-// below back to "regular", which makes the AeroSpace WM capture/tile the overlay.
-// app.setName("web2d");
-// app.setAppUserModelId("com.web2d.app"); // Windows taskbar grouping / notifications
-// process.title = "web2d"; // main-process name in `ps`
-
 // Accessory ("agent") activation policy = macOS LSUIElement. MUST run before
 // whenReady, or the app is briefly a regular (Dock) app and AeroSpace latches onto
-// the window. (app.setName() also resets it to "regular" — hence disabled above.)
+// the window. We deliberately don't call app.setName() to rebrand: it flips the
+// policy back to "regular", which re-exposes the overlay to AeroSpace.
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
 
 // Must be registered before app `ready`.
@@ -109,9 +104,6 @@ function registerWindowIpc(): void {
 			height: Math.max(MIN_H, Math.round(b.height)),
 		};
 		win.setBounds(rect);
-		// A move can make AppKit drop the all-Spaces/level state; re-assert it
-		// synchronously so the overlay keeps floating over every Space after a move.
-		reassertOverlayState(win);
 		persistBounds(rect);
 	});
 }
@@ -213,12 +205,10 @@ function createWindow(): void {
 		alwaysOnTop: true,
 		hasShadow: false,
 		backgroundColor: "#00000000",
-		// AeroSpace's isWindowHeuristic ignores a window whose app is accessory AND
-		// which has no AX close button. Electron exposes the close button via the
-		// NSWindow style mask, so disable closable/minimizable/maximizable/resizable at
-		// creation to drop those buttons (and the style-mask bits) — doing it live via
-		// setStyleMask: instead would fire a recursive resize storm. The guide still
-		// moves/resizes the window programmatically via setBounds (verified unaffected).
+		// AeroSpace ignores an accessory app's window only when it has no AX close
+		// button (its isWindowHeuristic). Disabling these at creation drops the close
+		// button and its NSWindow style-mask bit; the guide still moves/resizes the
+		// window via setBounds. (Clearing the bit live via setStyleMask: recurses.)
 		closable: false,
 		minimizable: false,
 		maximizable: false,
@@ -236,10 +226,9 @@ function createWindow(): void {
 	const win = overlay;
 	forwardConsole(win.webContents, "renderer");
 
-	// The genuine DmNote NSWindow treatment (status level, joins all Spaces, floats
-	// over fullscreen, no hide-on-deactivate). AppKit can reset it on reorder, so
-	// re-assert on show/blur. The move/resize case is handled synchronously in the
-	// window:set-bounds handler (reassertOverlayState) to beat AeroSpace's observer.
+	// The DmNote NSWindow treatment (status level, joins all Spaces, floats over
+	// fullscreen, no hide-on-deactivate). AppKit can reset it on reorder, so re-apply
+	// on show/blur.
 	applyMacOverlay(win);
 	win.on("show", () => applyMacOverlay(win));
 	win.on("blur", () => applyMacOverlay(win));

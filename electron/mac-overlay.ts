@@ -30,8 +30,6 @@ interface ObjcBridge {
 	sendLong: (self: unknown, sel: unknown, arg: number) => void;
 	sendULong: (self: unknown, sel: unknown, arg: number) => void;
 	sendBool: (self: unknown, sel: unknown, arg: boolean) => void;
-	// objc_msgSend typed to return `long` — for reading scalar getters (e.g. level).
-	sendRetLong: (self: unknown, sel: unknown) => number;
 }
 
 let bridge: ObjcBridge | null = null;
@@ -50,10 +48,6 @@ function objc(): ObjcBridge | null {
 			sendLong: lib.func("objc_msgSend", "void", ["void *", "void *", "long"]),
 			sendULong: lib.func("objc_msgSend", "void", ["void *", "void *", "unsigned long"]),
 			sendBool: lib.func("objc_msgSend", "void", ["void *", "void *", "bool"]),
-			sendRetLong: lib.func("objc_msgSend", "long", ["void *", "void *"]) as (
-				self: unknown,
-				sel: unknown,
-			) => number,
 		};
 		return bridge;
 	} catch (err) {
@@ -90,35 +84,4 @@ export function applyMacOverlay(win: BrowserWindow): void {
 	o.sendBool(nsWindow, o.sel("setHidesOnDeactivate:"), false);
 	// Bring it forward without making it key/main (won't steal focus).
 	o.sendVoid(nsWindow, o.sel("orderFrontRegardless"));
-}
-
-/**
- * Re-assert just the window-server state (level + all-Spaces collection behavior +
- * no-hide), without re-ordering the window. A programmatic setBounds makes AppKit
- * drop canJoinAllSpaces, and the AeroSpace WM grabs the window in the gap before the
- * async `move` event fires — so call this SYNCHRONOUSLY right after setBounds to keep
- * the overlay continuously unmanaged. Cheaper than applyMacOverlay (no orderFront),
- * so it's fine to run on every drag frame.
- */
-export function reassertOverlayState(win: BrowserWindow): void {
-	const o = objc();
-	if (!o || win.isDestroyed()) return;
-	const nsWindow = nsWindowOf(win, o);
-	if (!nsWindow) return;
-
-	o.sendLong(nsWindow, o.sel("setLevel:"), NS_STATUS_WINDOW_LEVEL);
-	o.sendULong(nsWindow, o.sel("setCollectionBehavior:"), COLLECTION_BEHAVIOR);
-	o.sendBool(nsWindow, o.sel("setHidesOnDeactivate:"), false);
-}
-
-/**
- * Read back the NSWindow level — used by the smoke test to confirm the native
- * call actually took effect. Returns null if AppKit is unavailable.
- */
-export function readMacWindowLevel(win: BrowserWindow): number | null {
-	const o = objc();
-	if (!o || win.isDestroyed()) return null;
-	const nsWindow = nsWindowOf(win, o);
-	if (!nsWindow) return null;
-	return o.sendRetLong(nsWindow, o.sel("level"));
 }
