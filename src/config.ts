@@ -20,12 +20,14 @@ export interface Config {
 		springiness: number;
 	};
 
-	blinkGain: number;
+	eyes: { deadzone: number; curve: number; gain: number; gazeGain: number };
 	jaw: { deadzone: number; curve: number; gain: number };
 
 	renderFps: number;
 	detectFps: number;
 	camera: { width: number; height: number };
+
+	lockHotkey: string;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -42,11 +44,12 @@ export const DEFAULT_CONFIG: Config = {
 		gustHz: 0.5,
 		springiness: 1.02,
 	},
-	blinkGain: 1.2,
+	eyes: { deadzone: 0, curve: 1, gain: 1.2, gazeGain: 1 },
 	jaw: { deadzone: 0.004, curve: 0.22, gain: 1 },
 	renderFps: 120,
 	detectFps: 60,
 	camera: { width: 1080, height: 960 },
+	lockHotkey: "CommandOrControl+Alt+L",
 };
 
 // Live transform persisted as the user drags/zooms.

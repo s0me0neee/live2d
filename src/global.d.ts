@@ -28,6 +28,10 @@ declare global {
 			faceTracking: {
 				onRecenter(cb: () => void): () => void;
 			};
+			hotkey: {
+				get(): Promise<string>;
+				set(accelerator: string): Promise<boolean>;
+			};
 		};
 	}
 	// eslint-disable-next-line no-var

@@ -48,4 +48,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			return () => ipcRenderer.removeListener("face:recenter", listener);
 		},
 	},
+
+	// Read / rebind the global lock-toggle accelerator (settings window). set()
+	// resolves false if the accelerator is invalid or already taken.
+	hotkey: {
+		get: (): Promise<string> => ipcRenderer.invoke("config:get-hotkey"),
+		set: (accelerator: string): Promise<boolean> =>
+			ipcRenderer.invoke("config:set-hotkey", accelerator),
+	},
 });

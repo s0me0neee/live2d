@@ -13,8 +13,6 @@ dist-electron
 dist-ssr
 *.local
 
-# Runtime config + per-model state (seeded on first run; carries live pos/toggles)
-config/web2d/
 
 # Editor directories and files
 .vscode/*

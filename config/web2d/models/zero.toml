@@ -1,0 +1,228 @@
+location = "model/zero/Zero"
+model = "机能少女-零.model3.json"
+
+[gain]
+"*y" = 1
+"*x" = 1
+"*z" = 1
+y = 1
+YY = 1
+x = 1
+"跨步L" = 1
+"跨步R" = 1
+z1 = 1
+z2 = 1
+"z2修正" = 1
+"扭胯" = 1
+"位置x" = 1
+"眉上下" = 1
+"眼眶L" = 1
+"瞳孔L" = 1
+"高光L" = 1
+"睫毛L" = 1
+"眼眶R" = 1
+"睫毛R" = 1
+"瞳缩L" = 1
+"瞳孔R" = 1
+"高光R" = 1
+"瞳缩R" = 1
+"侧发左" = 1
+"侧发右" = 1
+"前发y" = 1
+"后发x" = 1
+"整体x" = 1
+"整体y" = 1
+"胳膊l" = 1
+"胳膊r" = 1
+"袖子L" = 1
+"袖子R" = 1
+"蝴蝶结L" = 1
+"配饰" = 1
+"配饰(2)" = 1
+"蝴蝶结R" = 1
+"胸x" = 1
+"胸y" = 1
+"裙子x" = 1
+"裙子y" = 1
+"总群贼x" = 1
+"群贼y" = 1
+"群贼" = 1
+"花边" = 1
+"手袖" = 1
+"手袖R" = 1
+"花边(2)" = 1
+"柔软物体x" = 1
+"柔软物体y" = 1
+"情绪耳朵" = 1
+"情绪耳朵(2)" = 1
+"猫耳" = 1
+"尾巴" = 1
+"猫耳(2)" = 1
+"嘴巴张开" = 1
+"嘴宽" = 1
+"摇杆xy" = 1
+
+[expressions."加载中"]
+file = "加载中.exp3.json"
+key = "1"
+active = false
+
+[expressions."去水印"]
+file = "去水印.exp3.json"
+key = "2"
+active = true
+
+[expressions."变q"]
+file = "变q.exp3.json"
+key = "3"
+active = false
+
+[expressions."右手动作"]
+file = "右手动作.exp3.json"
+key = "4"
+active = false
+
+[expressions."右摇杆R1"]
+file = "右摇杆R1.exp3.json"
+key = "5"
+active = false
+
+[expressions."右摇杆R2"]
+file = "右摇杆R2.exp3.json"
+key = "6"
+active = false
+
+[expressions."呆呆眼"]
+file = "呆呆眼.exp3.json"
+key = "7"
+active = false
+
+[expressions."外套"]
+file = "外套.exp3.json"
+key = "8"
+active = false
+
+[expressions."小啾啾"]
+file = "小啾啾.exp3.json"
+key = "9"
+active = false
+
+[expressions."尾巴"]
+file = "尾巴.exp3.json"
+key = "0"
+active = false
+
+[expressions."左摇杆L1"]
+file = "左摇杆L1.exp3.json"
+key = ""
+active = false
+
+[expressions."左摇杆L2"]
+file = "左摇杆L2.exp3.json"
+key = ""
+active = false
+
+[expressions."感叹号"]
+file = "感叹号.exp3.json"
+key = ""
+active = false
+
+[expressions."披发"]
+file = "披发.exp3.json"
+key = ""
+active = false
+
+[expressions."星星眼"]
+file = "星星眼.exp3.json"
+key = ""
+active = false
+
+[expressions."枕头"]
+file = "枕头.exp3.json"
+key = ""
+active = false
+
+[expressions."棉棒"]
+file = "棉棒.exp3.json"
+key = ""
+active = false
+
+[expressions."汗滴"]
+file = "汗滴.exp3.json"
+key = ""
+active = false
+
+[expressions."流泪"]
+file = "流泪.exp3.json"
+key = ""
+active = false
+
+[expressions."游戏机"]
+file = "游戏机.exp3.json"
+key = ""
+active = false
+
+[expressions."爱心眼"]
+file = "爱心眼.exp3.json"
+key = ""
+active = false
+
+[expressions."猫耳"]
+file = "猫耳.exp3.json"
+key = ""
+active = false
+
+[expressions."生气"]
+file = "生气.exp3.json"
+key = ""
+active = false
+
+[expressions."眩晕"]
+file = "眩晕.exp3.json"
+key = ""
+active = false
+
+[expressions."短发"]
+file = "短发.exp3.json"
+key = ""
+active = false
+
+[expressions."耳机"]
+file = "耳机.exp3.json"
+key = ""
+active = false
+
+[expressions."脸红"]
+file = "脸红.exp3.json"
+key = ""
+active = false
+
+[expressions."脸黑"]
+file = "脸黑.exp3.json"
+key = ""
+active = false
+
+[expressions."问号"]
+file = "问号.exp3.json"
+key = ""
+active = false
+
+[expressions."飞头"]
+file = "飞头.exp3.json"
+key = ""
+active = false
+
+[expressions."麦克风"]
+file = "麦克风.exp3.json"
+key = ""
+active = false
+
+[expressions."黑发"]
+file = "黑发.exp3.json"
+key = ""
+active = false
+
+[pos]
+x = 326.8704136649348
+y = 442.55595827487696
+scale = 0.14986805579784404

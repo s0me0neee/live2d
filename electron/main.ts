@@ -10,14 +10,17 @@ import {
 } from "electron";
 import { join } from "node:path";
 import { applyMacOverlay } from "./mac-overlay";
+import { openSettings } from "./settings-window";
 import {
 	loadConfig,
+	loadHotkeySync,
 	loadWindowBoundsSync,
 	savePos,
 	saveWindowBounds,
 	setExpressionActive,
+	setLockHotkey,
 } from "./config";
-import type { Pos, WindowBounds } from "../src/config";
+import { DEFAULT_CONFIG, type Pos, type WindowBounds } from "../src/config";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // __dirname is a native global in the bundled CommonJS output (dist-electron/).
@@ -40,6 +43,12 @@ ipcMain.handle("config:save-pos", (_e, pos: Pos) => savePos(pos));
 ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
 );
+ipcMain.handle("config:get-hotkey", () => lockHotkey);
+ipcMain.handle("config:set-hotkey", async (_e, accelerator: string) => {
+	if (typeof accelerator !== "string" || !registerLockHotkey(accelerator)) return false;
+	await setLockHotkey(accelerator);
+	return true;
+});
 
 const MIN_W = 200;
 const MIN_H = 150;
@@ -92,8 +101,41 @@ function setOverlayLock(win: BrowserWindow, locked: boolean): void {
 	refreshTrayMenu();
 }
 
+// Tracked so it's distinguishable from the settings window (also a BrowserWindow).
+let overlay: BrowserWindow | null = null;
 function overlayWindow(): BrowserWindow | undefined {
-	return BrowserWindow.getAllWindows()[0];
+	return overlay && !overlay.isDestroyed() ? overlay : undefined;
+}
+
+function toggleLock(): void {
+	const win = overlayWindow();
+	if (win) setOverlayLock(win, !overlayLocked);
+}
+
+// The global hotkey that toggles the lock. Set from config at boot, re-bound from
+// the settings window. Essential because once click-through the renderer can't
+// receive a click to unlock.
+let lockHotkey = DEFAULT_CONFIG.lockHotkey;
+
+// Registers the new accelerator BEFORE dropping the old one, so a failure (invalid
+// or already-taken accelerator — register can even throw) leaves the previous
+// binding intact rather than unbinding everything. Returns false on failure so the
+// settings UI can report it.
+function registerLockHotkey(accelerator: string): boolean {
+	if (accelerator === lockHotkey && globalShortcut.isRegistered(accelerator)) return true;
+
+	let registered = false;
+	try {
+		registered = globalShortcut.register(accelerator, toggleLock);
+	} catch {
+		registered = false;
+	}
+	if (!registered) return false;
+
+	if (lockHotkey !== accelerator) globalShortcut.unregister(lockHotkey);
+	lockHotkey = accelerator;
+	refreshTrayMenu();
+	return true;
 }
 
 // Registered once (not per-window) so re-creating the window can't double-register.
@@ -112,7 +154,7 @@ function registerOverlayIpc(): void {
 
 function createWindow(): void {
 	const b = savedBounds;
-	const win = new BrowserWindow({
+	overlay = new BrowserWindow({
 		title: "web2d",
 		width: b?.width ?? 800,
 		height: b?.height ?? 600,
@@ -134,6 +176,7 @@ function createWindow(): void {
 			nodeIntegration: false,
 		},
 	});
+	const win = overlay;
 
 	// The genuine DmNote NSWindow treatment (status level, joins all Spaces, floats
 	// over fullscreen, no hide-on-deactivate). AppKit can reset it on reorder, so
@@ -173,17 +216,15 @@ function createTray(): void {
 		const menu = Menu.buildFromTemplate([
 			{
 				label: overlayLocked ? "Unlock (make clickable)" : "Lock (click-through)",
-				accelerator: "CommandOrControl+Alt+L",
-				click: () => {
-					const win = overlayWindow();
-					if (win) setOverlayLock(win, !overlayLocked);
-				},
+				accelerator: lockHotkey,
+				click: toggleLock,
 			},
 			{
 				label: "Recenter face tracking",
 				click: () => overlayWindow()?.webContents.send("face:recenter"),
 			},
 			{ type: "separator" },
+			{ label: "Settings…", click: openSettings },
 			{ label: "Quit", role: "quit" },
 		]);
 		tray?.setContextMenu(menu);
@@ -205,12 +246,10 @@ app.whenReady().then(() => {
 	createTray();
 	createWindow();
 
-	// Needed because once click-through, the renderer can't receive a click to unlock.
-	const ok = globalShortcut.register("CommandOrControl+Alt+L", () => {
-		const win = overlayWindow();
-		if (win) setOverlayLock(win, !overlayLocked);
-	});
-	if (!ok) console.warn("[overlay] could not register CommandOrControl+Alt+L hotkey");
+	lockHotkey = loadHotkeySync();
+	if (!registerLockHotkey(lockHotkey)) {
+		console.warn(`[overlay] could not register lock hotkey "${lockHotkey}"`);
+	}
 
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();

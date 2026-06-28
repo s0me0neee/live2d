@@ -59,6 +59,25 @@ export async function saveWindowBounds(bounds: WindowBounds): Promise<void> {
 	await writeToml(configFile, root);
 }
 
+// Read synchronously so the hotkey can be registered in the same launch tick as
+// the window (see loadWindowBoundsSync).
+export function loadHotkeySync(): string {
+	try {
+		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		return typeof root.lockHotkey === "string" && root.lockHotkey
+			? root.lockHotkey
+			: DEFAULT_CONFIG.lockHotkey;
+	} catch {
+		return DEFAULT_CONFIG.lockHotkey;
+	}
+}
+
+export async function setLockHotkey(accelerator: string): Promise<void> {
+	const root = await readToml(configFile);
+	root.lockHotkey = accelerator;
+	await writeToml(configFile, root);
+}
+
 export async function savePos(pos: Pos): Promise<void> {
 	await patchModel((raw) => {
 		raw.pos = pos;

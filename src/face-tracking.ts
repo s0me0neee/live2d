@@ -189,7 +189,7 @@ function mapResult(res: any, out: Rig, config: Config, cal: HeadCalibration): vo
 	for (const c of res.faceBlendshapes[0].categories) bs[c.categoryName] = c.score;
 	const v = (name: string) => bs[name] ?? 0;
 
-	const { mirror, headGain, headClampDeg: lim, blinkGain, jaw: jc } = config;
+	const { mirror, headGain, headClampDeg: lim, eyes: ec, jaw: jc } = config;
 	const ms = mirror ? -1 : 1;
 
 	// Head pose from the 4x4 facial transformation matrix (column-major), made
@@ -215,12 +215,18 @@ function mapResult(res: any, out: Rig, config: Config, cal: HeadCalibration): vo
 		out.angleZ = clamp(-(roll - cal.roll) * ms * headGain, -lim, lim);
 	}
 
-	// Eyes — mirror-swap so it reads like a mirror.
+	// Eyes — mirror-swap so it reads like a mirror. Blink is shaped like the jaw:
+	// deadzone drops eyelid jitter, the curve reshapes partial blinks, gain scales
+	// the close amount.
 	let blinkL = v("eyeBlinkLeft");
 	let blinkR = v("eyeBlinkRight");
 	if (mirror) [blinkL, blinkR] = [blinkR, blinkL];
-	out.eyeLOpen = clamp(1 - blinkL * blinkGain, 0, 1);
-	out.eyeROpen = clamp(1 - blinkR * blinkGain, 0, 1);
+	const closeAmount = (raw: number) => {
+		const d = clamp((raw - ec.deadzone) / (1 - ec.deadzone), 0, 1);
+		return Math.pow(d, ec.curve) * ec.gain;
+	};
+	out.eyeLOpen = clamp(1 - closeAmount(blinkL), 0, 2);
+	out.eyeROpen = clamp(1 - closeAmount(blinkR), 0, 2);
 
 	const gx =
 		(v("eyeLookInLeft") + v("eyeLookOutRight")) / 2 -
@@ -228,8 +234,8 @@ function mapResult(res: any, out: Rig, config: Config, cal: HeadCalibration): vo
 	const gy =
 		(v("eyeLookUpLeft") + v("eyeLookUpRight")) / 2 -
 		(v("eyeLookDownLeft") + v("eyeLookDownRight")) / 2;
-	out.eyeBallX = clamp(gx * ms, -1, 1);
-	out.eyeBallY = clamp(gy, -1, 1);
+	out.eyeBallX = clamp(gx * ms * ec.gazeGain, -1, 1);
+	out.eyeBallY = clamp(gy * ec.gazeGain, -1, 1);
 
 	// Deadzone kills closed-mouth jitter; the concave curve lifts speech.
 	const jaw = clamp((v("jawOpen") - jc.deadzone) / (1 - jc.deadzone), 0, 1);

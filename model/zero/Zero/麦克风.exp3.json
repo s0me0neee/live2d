@@ -1,0 +1,36 @@
+{
+    "Type": "Live2D Expression",
+    "IsModelCustomizationExpression": false,
+    "Parameters": [
+        {
+            "Id": "fase127",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "fase124",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "fase125",
+            "Value": 0.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "fase126",
+            "Value": 0.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "fase128",
+            "Value": 0.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "fase19",
+            "Value": 1.0,
+            "Blend": "Add"
+        }
+    ]
+}

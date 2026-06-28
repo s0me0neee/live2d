@@ -1,0 +1,81 @@
+location = "model/ariu"
+model = "ariu.model3.json"
+
+[expressions.circle_eyes]
+file = "circle_eyes.exp3.json"
+key = "1"
+active = false
+
+[expressions.controller]
+file = "controller.exp3.json"
+key = "2"
+active = false
+
+[expressions.darkened]
+file = "darkened.exp3.json"
+key = "3"
+active = false
+
+[expressions.hat]
+file = "hat.exp3.json"
+key = "4"
+active = false
+
+[expressions.heart_eyes]
+file = "heart_eyes.exp3.json"
+key = "5"
+active = false
+
+[expressions.jk_bag]
+file = "jk_bag.exp3.json"
+key = "6"
+active = false
+
+[expressions.remove_coat]
+file = "remove_coat.exp3.json"
+key = "7"
+active = false
+
+[expressions.skirt]
+file = "skirt.exp3.json"
+key = "8"
+active = true
+
+[expressions.twintail_L_hide]
+file = "twintail_L_hide.exp3.json"
+key = "9"
+active = false
+
+[expressions.twintail_R_hide]
+file = "twintail_R_hide.exp3.json"
+key = "0"
+active = false
+
+[pos]
+x = 340.6372062536444
+y = 625.4032119393921
+scale = 0.2703602364975087
+
+[gain]
+z = 1
+x = 1
+y = 1
+hair = 1.2
+eye = 1
+hair2 = 1.2
+"后发" = 1
+hand = 0.4
+"hand(2)" = 0.4
+"外套裙子x" = 2
+"外套裙子y" = 2
+"蝴蝶结" = 1.2
+"蝴蝶" = 1.6
+"蝴蝶(2)" = 1.6
+"马尾" = 1.6
+"马尾(2)" = 1.6
+"外套" = 1.4
+"外套(2)" = 1.4
+"衬衫" = 1.6
+"衬衫(2)" = 1.6
+"耳朵" = 1.4
+"耳朵(2)" = 1.4
