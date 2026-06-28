@@ -7,6 +7,7 @@ import { setupPhysics } from "./physics";
 import { setupInteraction } from "./interaction";
 import { setupWindowControls } from "./window-controls";
 import { mountFps } from "./fps";
+import { modelAssetUrl } from "./model-url";
 
 // pixi-live2d-display reads window.PIXI to auto-register its ticker/interaction.
 window.PIXI = PIXI;
@@ -45,7 +46,8 @@ setupWindowControls();
 if (!modelConfig.location || !modelConfig.model) {
 	console.warn("No model configured — set location/model in the model's TOML.");
 } else {
-	const model = await Live2DModel.from(`/${modelConfig.location}/${modelConfig.model}`);
+	const base = modelConfig.resolvedLocation || modelConfig.location;
+	const model = await Live2DModel.from(modelAssetUrl(base, modelConfig.model));
 	app.stage.addChild(model);
 	model.anchor.set(0.5, 0.5);
 	// First load: centered at scale 1. setupInteraction restores [pos] if present.

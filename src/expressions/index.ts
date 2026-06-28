@@ -1,5 +1,6 @@
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { ModelConfig } from "../config";
+import { modelAssetUrl } from "../model-url";
 
 interface ExpParam {
 	Id: string;
@@ -21,9 +22,10 @@ export async function setupExpressions(
 	modelConfig: ModelConfig,
 	visible: boolean,
 ): Promise<void> {
+	const base = modelConfig.resolvedLocation || modelConfig.location;
 	const defs: LoadedExpression[] = await Promise.all(
 		Object.entries(modelConfig.expressions).map(async ([name, e]) => {
-			const data = await fetch(`/${modelConfig.location}/${e.file}`).then((r) => r.json());
+			const data = await fetch(modelAssetUrl(base, e.file)).then((r) => r.json());
 			return { name, key: e.key, params: (data.Parameters ?? []) as ExpParam[] };
 		}),
 	);

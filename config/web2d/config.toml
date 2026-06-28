@@ -8,8 +8,8 @@ breath = 0.2
 renderFps = 120
 detectFps = 60
 lockHotkey = "Command+Shift+Z"
-showFps = true
-showExpressions = true
+showFps = false
+showExpressions = false
 
 [physics]
 windEnabled = false
@@ -37,7 +37,7 @@ width = 1200
 height = 1200
 
 [window]
-x = 943
-y = 226
+x = 967
+y = 277
 width = 729
 height = 799

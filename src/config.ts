@@ -90,6 +90,10 @@ export interface ModelConfig {
 	location: string; // model dir, relative to project root / cwd (or absolute)
 	model: string; // the .model3.json filename inside `location`
 
+	// Absolute `location`, resolved by the main process. The renderer builds the
+	// model-asset URLs (custom web2dmodel:// scheme) from this. Derived, not persisted.
+	resolvedLocation?: string;
+
 	// Secondary-motion tuning, keyed by physics setting name (discovered from the
 	// model's .physics3.json). On disk only the value (multiplier) is stored.
 	gain: Record<string, GainSetting>;

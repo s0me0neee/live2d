@@ -133,6 +133,7 @@ async function loadModel(name: string): Promise<ModelConfig> {
 		physicsBodyParams: routing.physicsBodyParams,
 		expressions: await discoverExpressions(location, savedExpressions),
 	};
+	if (location) model.resolvedLocation = resolveModelDir(location);
 	const pos = parsePos(raw.pos);
 	if (pos) model.pos = pos;
 

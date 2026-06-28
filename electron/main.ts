@@ -8,9 +8,10 @@ import {
 	session,
 	Tray,
 } from "electron";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { applyMacOverlay } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
+import { registerModelScheme, handleModelProtocol } from "./model-protocol";
 import { openSettings } from "./settings-window";
 import {
 	loadConfig,
@@ -32,17 +33,34 @@ const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // Rebrand to "web2d". app.setName() is DISABLED: it resets the activation policy
 // below back to "regular", which makes the AeroSpace WM capture/tile the overlay.
 // app.setName("web2d");
-app.setAppUserModelId("com.web2d.app"); // Windows taskbar grouping / notifications
-process.title = "web2d"; // main-process name in `ps`
+// app.setAppUserModelId("com.web2d.app"); // Windows taskbar grouping / notifications
+// process.title = "web2d"; // main-process name in `ps`
 
 // Accessory ("agent") activation policy = macOS LSUIElement. MUST run before
 // whenReady, or the app is briefly a regular (Dock) app and AeroSpace latches onto
 // the window. (app.setName() also resets it to "regular" — hence disabled above.)
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
 
+// Must be registered before app `ready`.
+registerModelScheme();
+
+// Model directories the custom scheme is allowed to read from (resolved locations of
+// loaded models), so the renderer can't pull arbitrary files off disk.
+const allowedModelRoots = new Set<string>();
+const isAllowedModelPath = (filePath: string): boolean => {
+	for (const root of allowedModelRoots) {
+		if (filePath === root || filePath.startsWith(root + sep)) return true;
+	}
+	return false;
+};
+
 // Config IPC: the renderer fetches the resolved config at boot, then writes back
 // the live transform / expression toggles. All file IO lives in ./config.
-ipcMain.handle("config:get", () => loadConfig());
+ipcMain.handle("config:get", async () => {
+	const cfg = await loadConfig();
+	if (cfg.model.resolvedLocation) allowedModelRoots.add(cfg.model.resolvedLocation);
+	return cfg;
+});
 ipcMain.handle("config:save-pos", (_e, pos: Pos) => savePos(pos));
 ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
@@ -277,6 +295,8 @@ app.whenReady().then(() => {
 	session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
 		cb(permission === "media"); // auto-grant the webcam for face tracking
 	});
+
+	handleModelProtocol(isAllowedModelPath);
 
 	// Synchronous so createWindow() runs in this launch tick — an async gap here
 	// lets AeroSpace capture the overlay.
