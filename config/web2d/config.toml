@@ -5,8 +5,8 @@ headGain = 1.3
 headClampDeg = 90
 bodyFollow = 0.3333333333333333
 breath = 0.2
-renderFps = 70
-detectFps = 40
+renderFps = 60
+detectFps = 30
 lockHotkey = "Command+Shift+Z"
 showFps = false
 showExpressions = false
@@ -24,8 +24,8 @@ y = -0.03
 
 [eyes]
 deadzone = 0
-curve = 1.5
-gain = 1.3
+curve = 1.6
+gain = 1.4
 gazeGain = 1.1
 
 [jaw]
@@ -34,8 +34,8 @@ curve = 0.15
 gain = 0.9
 
 [camera]
-width = 720
-height = 580
+width = 640
+height = 480
 
 [window]
 x = 887
