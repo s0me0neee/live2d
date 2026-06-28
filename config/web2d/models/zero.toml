@@ -1,4 +1,4 @@
-location = "/Users/maot27/Documents/live2dModels/zero/Zero"
+location = "/Users/maot27/Documents/live2dModels/zero"
 model = "机能少女-零.model3.json"
 
 [gain]
@@ -140,7 +140,7 @@ active = false
 [expressions."枕头"]
 file = "枕头.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."棉棒"]
 file = "棉棒.exp3.json"
@@ -185,7 +185,7 @@ active = false
 [expressions."短发"]
 file = "短发.exp3.json"
 key = ""
-active = true
+active = false
 
 [expressions."耳机"]
 file = "耳机.exp3.json"
