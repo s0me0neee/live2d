@@ -8,136 +8,112 @@ this revision; checked items are in the tree today.
 - [x] **Overlay window (macOS)** — AppKit `NSWindow` treatment via koffi FFI:
       status level, joins all Spaces, floats over fullscreen, never steals focus.
       (`electron/mac-overlay.ts`)
-- [x] **Click-through toggle** — global hotkey **Cmd/Ctrl+Alt+L** + tray menu.
-      (`electron/main.ts`)
+- [x] **Click-through toggle** — global hotkey + tray menu. (`electron/main.ts`)
 - [x] **Move/resize guide** — when unlocked, a drag bar + corner handles move and
       resize the OS window without grabbing the model. (`src/window-controls.ts`)
-- [x] **Rebrand to "web2d"** — `setAppUserModelId` + `process.title`
-      (`electron/main.ts`), window/document title, `name`/`productName`
-      (`package.json`), tray label. `app.setName()` is intentionally NOT called: it
-      resets the activation policy back to "regular", which makes AeroSpace capture
-      the overlay (see 0.2). Activity Monitor still shows "Electron" in dev until the
-      app is packaged with a renamed binary.
-- [x] **Stabilize the macOS overlay (0.2)** — click-through when needed, always
-      top-most, and no longer captured by the AeroSpace WM. The capture was caused
-      by `app.setName()` flipping the activation policy to "regular"; dropping it
-      (keeping `setActivationPolicy("accessory")` before `whenReady`) keeps the
-      window an accessory so AeroSpace leaves it alone. (`electron/main.ts`)
+- [x] **Stabilize the macOS overlay (0.2)** — top-most, click-through when needed,
+      no longer captured by the AeroSpace WM. Two causes fixed: `app.setName()`
+      flipped the activation policy to "regular" (dropped it; keep
+      `setActivationPolicy("accessory")` before `whenReady`), and the frameless
+      window kept its AX close button (set `closable:false` at creation so
+      AeroSpace's `isWindowHeuristic` leaves it alone). (`electron/main.ts`)
 - [x] **Runtime TOML config (0.1 + 0.15)** — `electron/config.ts` loads
-      `config.toml` + `models/<name>.toml` (selected by `config.toml`'s `model`
-      field) and hands it to the renderer via `config:get`. The model file holds
-      `location`/`model` (required), a `[gain]` table generated from the model's
-      `physics3.json` (one entry per physics setting name, `v` = swing multiplier),
-      the live
-      `[pos]`, and auto-discovered `[expressions.*]`. First load centers the model
-      at scale 1; `[pos]` persists drag/zoom. `src/config.ts` is now just types +
-      blank defaults. Replaced `model-config.ts`, `generated.ts`,
-      `build-exp-keys.mjs`, root `pos.toml`. Config dir is gitignored
-      `config/web2d/`; a future step swaps it for the per-platform dir.
+      `config.toml` + `models/<name>.toml` and hands it to the renderer via
+      `config:get`. Model file holds `location`/`model`, a `[gain]` table generated
+      from `physics3.json`, live `[pos]`, and auto-discovered `[expressions.*]`.
+      `src/config.ts` is types + blank defaults.
+- [x] **Models outside the project dir** — `web2dmodel://` custom protocol serves a
+      model's whole asset tree from an arbitrary on-disk location, gated to resolved
+      model roots. (`electron/model-protocol.ts`)
+- [x] **Physics-aware head/body + eyes** — head pose written to the physics INPUT
+      when the model derives angles as secondary motion; body-follow skips
+      physics-driven params; `[eyes]` shaping (deadzone/curve/gain/gaze).
+      (`src/face-tracking.ts`)
+- [x] **Settings window — plumbing** — single-instance framed/focusable window,
+      opened from the tray "Settings…", 2nd Vite entry (`settings.html` →
+      `src/settings/main.ts`), shares `preload.cjs`. Modern grouped-card UI.
+      (`electron/settings-window.ts`)
+- [x] **Configurable global hotkeys** — lock + recenter, rebindable from the
+      settings window and unbindable to empty; persisted in `config.toml`.
+- [x] **Tray controls** — Lock, Recenter, Reload config (reloads the renderer),
+      Show FPS counter, Show expression list, Settings…, Quit.
+- [x] **Colorized stdout logging** — `electron/log.ts` (picocolors), per-module
+      tags + levels; renderer console forwarded and colorized. (`forward-console.ts`)
+- [x] **Dependency bump** — Electron 33→42 (escapes the Node-26 install breakage),
+      esbuild 0.28, Vite 8, pixi pinned v7; CORS fix for the model scheme under
+      Electron 42. *(on branch `chore/bump-deps`; not yet merged — see Next up #1)*
+- [x] **Perf — quick wins** — render FPS cap, reused blendshape object (no per-frame
+      alloc), MediaPipe code-split out of the entry bundle.
 
-## Backlog
+## Next up (ordered)
 
-### 1. Settings window
+### 1. Land the dependency bump on master
+Master still pins Electron 33, which **fails to install under Node 26** on this
+machine, so master can't run as-is. The working stack lives on `chore/bump-deps`
+with a pile of uncommitted work (recenter hotkey, settings redesign, logging, perf).
+- Commit the uncommitted changes in logical chunks (perf, hotkey+settings, logging).
+- Verify `pnpm build` + a clean `pnpm dev` boot once more.
+- Merge `chore/bump-deps` → `master` (PR or fast-forward) so master is the runnable
+  baseline. This unblocks everything below.
 
-A second, normal (framed, focusable, opaque, NOT always-on-top, NOT overlay-styled)
-window that configures and controls the overlay. Opened from the tray. Builds on the
-0.1 TOML config as its data layer.
+### 2. Performance — config wins, then structural
+- **P0 (config only):** drop `[camera]` to ~640×480 and `detectFps` to 30. Biggest
+  CPU/GPU reduction for no visible quality loss; may make P2 unnecessary.
+- **P2 (structural):** move MediaPipe inference into a **Web Worker**
+  (`ImageBitmap`/`OffscreenCanvas`) so a slow detect frame can't stall the Pixi
+  render loop. Only pursue if P0 isn't enough under game load.
 
-**v1 scope (core controls):** active-model picker, lock / click-through toggle,
-"recenter face tracking" button, the model's `[gain]` sliders, and expression
-toggles. Defers the full `config.toml` Config table (smoothing/fps/camera/physics…)
-to a later pass.
+### 3. Finish Settings window v1 (the real feature, not just hotkeys)
+The window today configures **only hotkeys**. The original v1 scope — active-model
+picker, lock toggle, recenter button, `[gain]` sliders, expression toggles — is still
+unbuilt, and changes apply via the interim tray **"Reload config"** (full renderer
+reload) rather than live re-apply.
 
-**Apply model:** scalar edits **live re-apply** to the overlay with no reload — main
-writes the TOML and broadcasts `config:changed`; the overlay re-runs each feature
-module's apply step. The one exception is **switching the active model**, which
-reloads the overlay renderer (a live model dispose/reload is too fragile to be worth
-it in v1).
+**a. Config / IPC surface** (`electron/config.ts`, `main.ts`, `preload.ts`)
+- `listModels()` (basenames of `models/*.toml`), `setActiveModel(name)`,
+  `setGain(name, value)` (patch `[gain].<name>` multiplier only), reuse
+  `setExpressionActive`. Expose `listModels`/`setModel`/`setGain`/`onConfigChanged`.
+- After a scalar write, `loadConfig()` and broadcast `config:changed`
+  (`ResolvedConfig`) to the overlay window. `setActiveModel` reloads the overlay
+  renderer instead (a live model dispose/reload is too fragile for v1).
 
-**a. Window + process wiring** (`electron/`)
-- New `electron/settings-window.ts`: a single-instance `BrowserWindow` (framed,
-  `focusable:true`, opaque, normal level, `skipTaskbar:false`). Same `preload.cjs`
-  so it gets `window.electronAPI`. If already open, focus instead of recreating.
-  Do **NOT** call `applyMacOverlay` on it.
-- Open it from a new tray item "Settings…" (and reuse for a possible later hotkey).
-  Keep `app.setActivationPolicy("accessory")` — do not flip to "regular" (that's the
-  0.2 AeroSpace regression). Accessory apps can still focus a window; on open call
-  `win.show()` + `win.focus()` (and `app.focus({steal:true})` if needs be).
-- RISK: an accessory (LSUIElement) app can be flaky at taking **keyboard** focus for
-  text fields. v1 controls are all dropdown / toggle / slider / button / checkbox
-  (no free-text), which work with mouse focus alone — keep it that way; if a future
-  knob needs typed input, revisit focus handling rather than changing the policy.
+**b. Overlay live-apply** (`src/main.ts` + feature modules)
+- Have `physics.ts` / `face-tracking.ts` / `expressions/` return a handle with an
+  `apply(config, modelConfig)` step (recompute `gainGroups` on `[gain]` change,
+  `setActive(name, active)` for expressions). `src/main.ts` keeps mutable
+  `config`/`modelConfig`, subscribes to `onConfigChanged`, fans values out.
+- This retires the tray "Reload config" workaround for scalar edits.
 
-**b. Build wiring** (`vite.config.ts`, project root)
-- Add a second Vite entry: `build.rollupOptions.input = { main: "index.html",
-  settings: "settings.html" }`. New root `settings.html` loads `src/settings/main.ts`.
-- Main loads it via `loadFile(dist/settings.html)` packaged, or
-  `${ELECTRON_RENDERER_URL}/settings.html` in dev. `base:"./"` already set.
-
-**c. Config / IPC surface** (`electron/config.ts`, `electron/main.ts`, `preload.ts`)
-- `electron/config.ts`: add `listModels()` (basenames of `models/*.toml`),
-  `setActiveModel(name)` (patch `config.toml.model`), `setGain(name, value)` (patch
-  model TOML `[gain].<name>` — only the multiplier; params stay physics-derived on
-  load), and reuse `setExpressionActive`. Optional `setExpressionKey(name, key)`.
-- `electron/main.ts`: handlers `settings:open`, `config:list-models`,
-  `config:set-model`, `config:set-gain`; a `face:recenter` handler that forwards to
-  the overlay (so the button and the existing tray item share one path). After any
-  scalar write, `loadConfig()` and send `config:changed` (fresh `ResolvedConfig`) to
-  the **overlay** window. `config:set-model` instead reloads the overlay renderer.
-  Lock reuses the existing `overlay:*` IPC.
-- `preload.ts` + `src/global.d.ts`: expose `openSettings()`, `listModels()`,
-  `setModel(name)`, `setGain(name, value)`, `recenter()`, and `onConfigChanged(cb)`.
-
-**d. Overlay live-apply** (`src/main.ts` + feature modules)
-- Make the feature setups return a handle with an apply step instead of baking config
-  into closures only at boot:
-  - `physics.ts`: wrap the field mutation in an `apply(config)` called at setup and on
-    change.
-  - `face-tracking.ts`: hold `config`/`modelConfig` in a mutable ref; recompute
-    `gainGroups` when `[gain]` changes; expose `update(config, modelConfig)`.
-  - `expressions/`: expose `setActive(name, active)` so a toggle made in settings is
-    applied to the model (the settings checkbox is the source; the model lives in the
-    overlay).
-  - Lock already flows through `overlay:lock-changed`; nothing to add.
-- `src/main.ts`: keep mutable `config`/`modelConfig`, subscribe to `onConfigChanged`,
-  and fan the new values out to the handles above.
-
-**e. Settings UI** (`src/settings/main.ts`, `settings.html`, small CSS)
-- Plain-DOM TS (matches `window-controls.ts` / `expressions/` style; no framework).
-  Populate from `getConfig()` + `listModels()`; sections: model dropdown, lock toggle
+**c. Settings UI** (`src/settings/main.ts`, `settings.html`)
+- Plain-DOM TS. Add sections under the existing hotkeys: model dropdown, lock toggle
   (`getLock`/`onLockChanged`/`setLock`), recenter button, a gain slider per
   `model.gain` entry (≈0–3, step 0.05), expression checkboxes (show assigned key).
+- RISK: an accessory (LSUIElement) app can be flaky taking **keyboard** focus.
+  Keep v1 controls mouse-only (dropdown/toggle/slider/checkbox); revisit focus
+  rather than the activation policy if typed input is ever needed.
 
-**Phasing**
-1. Window + tray "Settings…" + Vite 2nd entry + blank page that loads (proves the
-   two-window / two-entry plumbing under the accessory policy).
-2. Read-only render of model / lock / gain / expressions from `getConfig()`.
-3. Writes + `config:changed` broadcast + overlay apply handles (lock, recenter, gain,
-   expression toggles).
-4. Model picker → overlay reload on switch.
+**Phasing:** (1) read-only render of model/lock/gain/expressions from `getConfig()` →
+(2) writes + `config:changed` + overlay apply handles → (3) model picker → reload.
 
-### 2. Click-through on Linux/Wayland
+## Backlog (later platforms)
 
-The toggle works on macOS; make Cmd+Alt+L + click-through behave on Linux/Wayland.
+### 4. Click-through on Linux/Wayland
+The toggle works on macOS; make the hotkey + click-through behave on Linux/Wayland.
 <https://www.electronjs.org/docs/latest/api/global-shortcut>
 
-### 3. Drag/resize bar when not click-through
+### 5. DmNote's Linux overlay technique
+How DmNote achieves always-on-top / all-workspaces / float-over-fullscreen on Linux
+(the macOS path is already mirrored).
 
-- [x] Done (item under "Done" above). Kept here for numbering continuity.
-
-### 4. DmNote's Linux overlay technique
-
-Find out how DmNote achieves the always-on-top / all-workspaces / float-over-
-fullscreen overlay on Linux (the macOS path is already mirrored).
-
-### 4.5 Windows support
-
+### 6. Windows support
 Bring the overlay behavior to Windows.
 
 ## Notes
 
 - A previous Linux click-through attempt (renderer streams the model bbox, main
   polls the global cursor) was removed as non-working — see git history before
-  reattempting under #2/#4.
+  reattempting under #4/#5.
+- The repo path (`rust/live2d`) and `README.md` are stale Tauri-era artifacts; the
+  app is all TS/Electron now.
 - Transparent always-on-top-but-click-below reference:
   <https://stackoverflow.com/questions/50142924/create-electron-transparent-window-ontop-but-clickable-below-programs>
