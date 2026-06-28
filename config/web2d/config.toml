@@ -1,4 +1,4 @@
-model = "zero-linux"
+model = "zero"
 mirror = true
 smoothing = 0.6
 headGain = 1.1
@@ -38,7 +38,7 @@ width = 740
 height = 580
 
 [window]
-x = -218
-y = -219
-width = 1272
-height = 1081
+x = 720
+y = 214
+width = 785
+height = 590
