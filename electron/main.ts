@@ -9,7 +9,7 @@ import {
 	Tray,
 } from "electron";
 import { join, sep } from "node:path";
-import { applyMacOverlay, reassertOverlayState, removeWindowButtons } from "./mac-overlay";
+import { applyMacOverlay, reassertOverlayState } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
 import { openSettings } from "./settings-window";
@@ -213,13 +213,16 @@ function createWindow(): void {
 		alwaysOnTop: true,
 		hasShadow: false,
 		backgroundColor: "#00000000",
-		// Born non-resizable (like DmNote) so the NSWindow lacks the resizable style
-		// mask and tiling WMs (AeroSpace) won't manage/tile it. The guide still
-		// moves/resizes it programmatically via setBounds — that's unaffected by the
-		// user-resize mask (verified), and resizing the NSWindow live via setStyleMask
-		// would instead fire a recursive resize storm.
-		resizable: false,
+		// AeroSpace's isWindowHeuristic ignores a window whose app is accessory AND
+		// which has no AX close button. Electron exposes the close button via the
+		// NSWindow style mask, so disable closable/minimizable/maximizable/resizable at
+		// creation to drop those buttons (and the style-mask bits) — doing it live via
+		// setStyleMask: instead would fire a recursive resize storm. The guide still
+		// moves/resizes the window programmatically via setBounds (verified unaffected).
+		closable: false,
+		minimizable: false,
 		maximizable: false,
+		resizable: false,
 		fullscreenable: false,
 		focusable: false, // never steal focus from the app underneath
 		skipTaskbar: true,
@@ -244,9 +247,6 @@ function createWindow(): void {
 	win.once("ready-to-show", () => {
 		win.showInactive(); // show without taking focus
 		applyMacOverlay(win);
-		// Frameless Electron windows keep the standard NSWindow buttons; remove them so
-		// AeroSpace's isWindowHeuristic sees no close button and leaves the overlay alone.
-		removeWindowButtons(win);
 		setOverlayLock(win, overlayLocked);
 	});
 

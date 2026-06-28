@@ -23,11 +23,9 @@ const COLLECTION_BEHAVIOR = (1 << 0) | (1 << 8);
 
 interface ObjcBridge {
 	sel: (name: string) => unknown;
-	getClass: (name: string) => unknown;
 	// objc_msgSend is variadic in C; each selector signature gets its own typed
 	// wrapper around the same symbol (koffi allows redeclaring it).
 	sendId: (self: unknown, sel: unknown) => unknown;
-	sendIdLong: (self: unknown, sel: unknown, arg: number) => unknown;
 	sendVoid: (self: unknown, sel: unknown) => void;
 	sendLong: (self: unknown, sel: unknown, arg: number) => void;
 	sendULong: (self: unknown, sel: unknown, arg: number) => void;
@@ -45,12 +43,9 @@ function objc(): ObjcBridge | null {
 	try {
 		const lib = koffi.load("/usr/lib/libobjc.A.dylib");
 		const selReg = lib.func("sel_registerName", "void *", ["str"]);
-		const getCls = lib.func("objc_getClass", "void *", ["str"]);
 		bridge = {
 			sel: (name: string) => selReg(name),
-			getClass: (name: string) => getCls(name),
 			sendId: lib.func("objc_msgSend", "void *", ["void *", "void *"]),
-			sendIdLong: lib.func("objc_msgSend", "void *", ["void *", "void *", "long"]),
 			sendVoid: lib.func("objc_msgSend", "void", ["void *", "void *"]),
 			sendLong: lib.func("objc_msgSend", "void", ["void *", "void *", "long"]),
 			sendULong: lib.func("objc_msgSend", "void", ["void *", "void *", "unsigned long"]),
@@ -126,31 +121,4 @@ export function readMacWindowLevel(win: BrowserWindow): number | null {
 	const nsWindow = nsWindowOf(win, o);
 	if (!nsWindow) return null;
 	return o.sendRetLong(nsWindow, o.sel("level"));
-}
-
-// NSApplicationActivationPolicy: 0 = regular, 1 = accessory, 2 = prohibited.
-// AeroSpace only ignores a (close-button-less) window while its app is accessory(1).
-export function readActivationPolicy(): number | null {
-	const o = objc();
-	if (!o) return null;
-	const nsApp = o.sendId(o.getClass("NSApplication"), o.sel("sharedApplication"));
-	if (!nsApp) return null;
-	return o.sendRetLong(nsApp, o.sel("activationPolicy"));
-}
-
-// Remove the standard window buttons (close/miniaturize/zoom) from the NSWindow.
-// Electron keeps them on the NSWindow even when frameless, and their presence makes
-// the AeroSpace WM treat the (otherwise accessory-app) overlay as a real, manageable
-// window — it tiles it once a move makes it re-evaluate. Removing them clears the AX
-// close-button attribute AeroSpace's isWindowHeuristic checks.
-export function removeWindowButtons(win: BrowserWindow): void {
-	const o = objc();
-	if (!o || win.isDestroyed()) return;
-	const nsWindow = nsWindowOf(win, o);
-	if (!nsWindow) return;
-
-	for (const buttonType of [0, 1, 2]) {
-		const button = o.sendIdLong(nsWindow, o.sel("standardWindowButton:"), buttonType);
-		if (button) o.sendVoid(button, o.sel("removeFromSuperview"));
-	}
 }
