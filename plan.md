@@ -47,16 +47,12 @@ this revision; checked items are in the tree today.
 
 ## Next up (ordered)
 
-### 1. Land the dependency bump on master
-Master still pins Electron 33, which **fails to install under Node 26** on this
-machine, so master can't run as-is. The working stack lives on `chore/bump-deps`
-with a pile of uncommitted work (recenter hotkey, settings redesign, logging, perf).
-- Commit the uncommitted changes in logical chunks (perf, hotkey+settings, logging).
-- Verify `pnpm build` + a clean `pnpm dev` boot once more.
-- Merge `chore/bump-deps` → `master` (PR or fast-forward) so master is the runnable
-  baseline. This unblocks everything below.
+### 1. Land the dependency bump on master ✅ DONE
+`master` is now the Electron 42 baseline (escapes the Node-26 install breakage),
+fast-forwarded from `chore/bump-deps` and pushed. Includes the model-load CORS fix,
+recenter hotkey + redesigned/utf-8 settings, colorized logging, and the perf wins.
 
-### 2. Performance — config wins, then structural
+### 2. Performance — config wins, then structural  ← NEXT
 - **P0 (config only):** drop `[camera]` to ~640×480 and `detectFps` to 30. Biggest
   CPU/GPU reduction for no visible quality loss; may make P2 unnecessary.
 - **P2 (structural):** move MediaPipe inference into a **Web Worker**
