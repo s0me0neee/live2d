@@ -15,20 +15,20 @@ importers:
         specifier: ^3.0.2
         version: 3.0.2
       pixi-live2d-display-lipsyncpatch:
-        specifier: ^0.5.0-ls-8
+        specifier: 0.5.0-ls-8
         version: 0.5.0-ls-8(pixi.js@7.4.3)
       pixi.js:
-        specifier: ^7.4.2
+        specifier: ^7.4.3
         version: 7.4.3
       smol-toml:
         specifier: ^1.7.0
         version: 1.7.0
     devDependencies:
       electron:
-        specifier: ^33.2.0
+        specifier: ^33.4.11
         version: 33.4.11
       esbuild:
-        specifier: ^0.24.0
+        specifier: ^0.24.2
         version: 0.24.2
       typescript:
         specifier: ~6.0.3
