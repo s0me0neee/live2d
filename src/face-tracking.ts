@@ -133,13 +133,14 @@ function driveModel(
 	(model as any).automator.autoFocus = false; // stop following the mouse
 
 	const set = (id: string, v: number) => cm.setParameterValueById(id, v);
+	const head = modelConfig.headAngle;
 
 	internal.on("afterMotionUpdate", () => {
 		for (const k of RIG_KEYS) rig[k] += (target[k] - rig[k]) * config.smoothing;
 
-		set("ParamAngleX", rig.angleX);
-		set("ParamAngleY", rig.angleY);
-		set("ParamAngleZ", rig.angleZ);
+		set(head.x, rig.angleX);
+		set(head.y, rig.angleY);
+		set(head.z, rig.angleZ);
 		set("ParamEyeLOpen", rig.eyeLOpen);
 		set("ParamEyeROpen", rig.eyeROpen);
 		set("ParamEyeBallX", rig.eyeBallX);
@@ -172,13 +173,20 @@ function driveModel(
 		}
 	};
 
-	// ParamBodyAngle* are physics outputs; this hook runs after physics so ours win.
+	// Linear body-follow as a fallback, applied after physics so it wins — but only
+	// for body params the model's physics does NOT already derive from the head. When
+	// physics drives the body, overriding it here fights the sim and can invert the
+	// lean (the body swings opposite the head), so we leave those to physics.
 	const f = config.bodyFollow;
+	const physicsDriven = new Set(modelConfig.physicsBodyParams);
+	const followBody = (id: string, v: number) => {
+		if (!physicsDriven.has(id)) set(id, v);
+	};
 	internal.on("beforeModelUpdate", () => {
-		set("ParamBodyAngleX", rig.angleX * f);
-		set("ParamBodyAngleY", rig.angleY * f);
-		set("ParamBodyAngleZ", rig.angleZ * f);
-		set("ParamBodyAngleZ2", rig.angleZ * f);
+		followBody("ParamBodyAngleX", rig.angleX * f);
+		followBody("ParamBodyAngleY", rig.angleY * f);
+		followBody("ParamBodyAngleZ", rig.angleZ * f);
+		followBody("ParamBodyAngleZ2", rig.angleZ * f);
 
 		for (const g of gainGroups) swing(g.params, g.gain);
 	});

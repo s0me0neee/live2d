@@ -32,6 +32,10 @@ declare global {
 				get(): Promise<string>;
 				set(accelerator: string): Promise<boolean>;
 			};
+			ui: {
+				onShowFps(cb: (visible: boolean) => void): () => void;
+				onShowExpressions(cb: (visible: boolean) => void): () => void;
+			};
 		};
 	}
 	// eslint-disable-next-line no-var

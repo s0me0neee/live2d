@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from "electron";
 import { join } from "node:path";
+import { forwardConsole } from "./forward-console";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 
@@ -29,6 +30,7 @@ export function openSettings(): void {
 		},
 	});
 	settingsWin = win;
+	forwardConsole(win.webContents, "settings");
 	win.on("closed", () => {
 		settingsWin = null;
 	});

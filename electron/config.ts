@@ -78,6 +78,26 @@ export async function setLockHotkey(accelerator: string): Promise<void> {
 	await writeToml(configFile, root);
 }
 
+export type UiToggle = "showFps" | "showExpressions";
+
+// Read synchronously so the tray's initial checkbox state is ready in the launch tick.
+export function loadUiTogglesSync(): Record<UiToggle, boolean> {
+	const pick = (root: Record<string, unknown>, key: UiToggle) =>
+		typeof root[key] === "boolean" ? (root[key] as boolean) : DEFAULT_CONFIG[key];
+	try {
+		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		return { showFps: pick(root, "showFps"), showExpressions: pick(root, "showExpressions") };
+	} catch {
+		return { showFps: DEFAULT_CONFIG.showFps, showExpressions: DEFAULT_CONFIG.showExpressions };
+	}
+}
+
+export async function saveUiToggle(key: UiToggle, value: boolean): Promise<void> {
+	const root = await readToml(configFile);
+	root[key] = value;
+	await writeToml(configFile, root);
+}
+
 export async function savePos(pos: Pos): Promise<void> {
 	await patchModel((raw) => {
 		raw.pos = pos;
@@ -104,23 +124,28 @@ async function loadModel(name: string): Promise<ModelConfig> {
 	const savedGain = parseGain(raw.gain);
 	const savedExpressions = parseExpressions(raw.expressions);
 
+	const routing = await discoverPhysicsRouting(location, modelJson);
 	const model: ModelConfig = {
 		location,
 		model: modelJson,
 		gain: await discoverGain(location, modelJson, savedGain),
+		headAngle: routing.headAngle,
+		physicsBodyParams: routing.physicsBodyParams,
 		expressions: await discoverExpressions(location, savedExpressions),
 	};
 	const pos = parsePos(raw.pos);
 	if (pos) model.pos = pos;
 
-	warnIfUnloadable(model);
+	const loadable = isModelLoadable(model);
 
-	// Persist discovered gain settings + expressions back into an EXISTING file
-	// only. Never create one for a missing/invalid model name — that just litters
-	// the models dir; an unknown model simply loads nothing.
+	// Persist discovered gain settings + expressions back into an EXISTING file only,
+	// and only when the model actually loaded. A failed load (e.g. the model was moved
+	// out of `location`) yields empty discovery; writing that back would wipe the
+	// user's saved gain/expressions. Also never create a file for a missing/invalid
+	// model name — that just litters the models dir.
 	const changed =
 		keysChanged(savedGain, model.gain) || keysChanged(savedExpressions, model.expressions);
-	if (existed && changed) {
+	if (existed && loadable && changed) {
 		raw.gain = toGainToml(model.gain);
 		raw.expressions = model.expressions;
 		await writeToml(file, raw);
@@ -173,6 +198,56 @@ async function discoverGain(
 const toGainToml = (gain: Record<string, GainSetting>): Record<string, number> =>
 	Object.fromEntries(Object.entries(gain).map(([name, g]) => [name, g.value]));
 
+// Inspect the model's physics to learn how to route head/body:
+//   - headAngle: if physics OUTPUTS a ParamAngle*, the head is physics-driven, so
+//     we redirect the write to the physics INPUT that feeds it; else drive it direct.
+//   - physicsBodyParams: ParamBodyAngle* the physics already derives from the head
+//     pose. We must NOT override those (their polarity/amount is the rigger's), or
+//     the body fights physics and can swing the wrong way.
+async function discoverPhysicsRouting(
+	location: string,
+	modelJson: string,
+): Promise<{ headAngle: ModelConfig["headAngle"]; physicsBodyParams: string[] }> {
+	const fallback = { headAngle: DEFAULT_MODEL_CONFIG.headAngle, physicsBodyParams: [] };
+	const dir = resolveModelDir(location);
+
+	const physicsFile = (await readJson(join(dir, modelJson)))?.FileReferences?.Physics;
+	if (typeof physicsFile !== "string") return fallback;
+	const physics = await readJson(join(dir, physicsFile));
+	if (!physics) return fallback;
+
+	const inputFor: Record<string, string> = {};
+	const bodyOutputs = new Set<string>();
+	for (const setting of physics.PhysicsSettings ?? []) {
+		const outputs = (setting.Output ?? [])
+			.map((o: any) => o?.Destination?.Id)
+			.filter((id: unknown): id is string => typeof id === "string");
+		const inputs = (setting.Input ?? [])
+			.map((i: any) => i?.Source?.Id)
+			.filter((id: unknown): id is string => typeof id === "string");
+		// Breath is a secondary input on head settings; the head pose feeds the other.
+		const headInput = inputs.find((id: string) => id !== "ParamBreath") ?? inputs[0];
+
+		for (const id of outputs) {
+			if (id.startsWith("ParamBodyAngle")) bodyOutputs.add(id);
+		}
+		if (headInput) {
+			for (const target of ["ParamAngleX", "ParamAngleY", "ParamAngleZ"]) {
+				if (outputs.includes(target) && !inputFor[target]) inputFor[target] = headInput;
+			}
+		}
+	}
+
+	return {
+		headAngle: {
+			x: inputFor.ParamAngleX ?? fallback.headAngle.x,
+			y: inputFor.ParamAngleY ?? fallback.headAngle.y,
+			z: inputFor.ParamAngleZ ?? fallback.headAngle.z,
+		},
+		physicsBodyParams: [...bodyOutputs],
+	};
+}
+
 // Keep saved key/active for files still present, drop vanished ones, assign a
 // free key (1-0) to newly found ones.
 async function discoverExpressions(
@@ -219,16 +294,23 @@ async function patchModel(mutate: (raw: Record<string, unknown>) => void): Promi
 	await writeToml(file, raw);
 }
 
-function warnIfUnloadable(m: ModelConfig): void {
+// Whether the model's files are actually present (and warn if not). Used to gate the
+// gain/expression write-back: a model that can't load yields empty discovery, and
+// persisting that would wipe the user's saved values.
+function isModelLoadable(m: ModelConfig): boolean {
 	if (!m.location || !m.model) {
 		console.warn("[config] model needs both `location` and `model` to load");
-		return;
+		return false;
 	}
 	if (!m.model.endsWith(".model3.json")) {
 		console.warn(`[config] "${m.model}" is not a .model3.json file`);
 	}
 	const modelPath = join(resolveModelDir(m.location), m.model);
-	if (!existsSync(modelPath)) console.warn(`[config] model file not found: ${modelPath}`);
+	if (!existsSync(modelPath)) {
+		console.warn(`[config] model file not found: ${modelPath}`);
+		return false;
+	}
+	return true;
 }
 
 const modelFile = (name: string) => join(modelsDir, `${name}.toml`);

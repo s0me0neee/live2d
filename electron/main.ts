@@ -10,15 +10,19 @@ import {
 } from "electron";
 import { join } from "node:path";
 import { applyMacOverlay } from "./mac-overlay";
+import { forwardConsole } from "./forward-console";
 import { openSettings } from "./settings-window";
 import {
 	loadConfig,
 	loadHotkeySync,
+	loadUiTogglesSync,
 	loadWindowBoundsSync,
 	savePos,
+	saveUiToggle,
 	saveWindowBounds,
 	setExpressionActive,
 	setLockHotkey,
+	type UiToggle,
 } from "./config";
 import { DEFAULT_CONFIG, type Pos, type WindowBounds } from "../src/config";
 
@@ -138,6 +142,23 @@ function registerLockHotkey(accelerator: string): boolean {
 	return true;
 }
 
+// UI toggles (FPS counter, expression list): persisted in config.toml and pushed to
+// the renderer to show/hide live. Seeded from config at boot (loadUiTogglesSync).
+const uiToggles: Record<UiToggle, boolean> = {
+	showFps: DEFAULT_CONFIG.showFps,
+	showExpressions: DEFAULT_CONFIG.showExpressions,
+};
+const UI_CHANNEL: Record<UiToggle, string> = {
+	showFps: "ui:show-fps",
+	showExpressions: "ui:show-expressions",
+};
+
+function setUiToggle(key: UiToggle, value: boolean): void {
+	uiToggles[key] = value;
+	overlayWindow()?.webContents.send(UI_CHANNEL[key], value);
+	saveUiToggle(key, value).catch((e) => console.warn(`save ${key} failed:`, e));
+}
+
 // Registered once (not per-window) so re-creating the window can't double-register.
 function registerOverlayIpc(): void {
 	ipcMain.handle("overlay:set-lock", (_e, locked: boolean) => {
@@ -177,6 +198,7 @@ function createWindow(): void {
 		},
 	});
 	const win = overlay;
+	forwardConsole(win.webContents, "renderer");
 
 	// The genuine DmNote NSWindow treatment (status level, joins all Spaces, floats
 	// over fullscreen, no hide-on-deactivate). AppKit can reset it on reorder, so
@@ -223,6 +245,25 @@ function createTray(): void {
 				label: "Recenter face tracking",
 				click: () => overlayWindow()?.webContents.send("face:recenter"),
 			},
+			{
+				// No live re-apply path yet; reloading the renderer re-fetches the
+				// config and re-runs setup, applying edited config.toml / model values.
+				label: "Reload config",
+				click: () => overlayWindow()?.webContents.reload(),
+			},
+			{ type: "separator" },
+			{
+				label: "Show FPS counter",
+				type: "checkbox",
+				checked: uiToggles.showFps,
+				click: (item) => setUiToggle("showFps", item.checked),
+			},
+			{
+				label: "Show expression list",
+				type: "checkbox",
+				checked: uiToggles.showExpressions,
+				click: (item) => setUiToggle("showExpressions", item.checked),
+			},
 			{ type: "separator" },
 			{ label: "Settings…", click: openSettings },
 			{ label: "Quit", role: "quit" },
@@ -240,6 +281,7 @@ app.whenReady().then(() => {
 	// Synchronous so createWindow() runs in this launch tick — an async gap here
 	// lets AeroSpace capture the overlay.
 	savedBounds = loadWindowBoundsSync();
+	Object.assign(uiToggles, loadUiTogglesSync());
 
 	registerOverlayIpc();
 	registerWindowIpc();

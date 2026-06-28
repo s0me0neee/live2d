@@ -1,19 +1,19 @@
-location = "model/zero/Zero"
+location = "/Users/maot27/Documents/live2dModels/zero/Zero"
 model = "机能少女-零.model3.json"
 
 [gain]
-"*y" = 1
-"*x" = 1
-"*z" = 1
+"*y" = 0.8
+"*x" = 0.8
+"*z" = 0.8
 y = 1
 YY = 1
 x = 1
-"跨步L" = 1
-"跨步R" = 1
+"跨步L" = 0.8
+"跨步R" = 0.8
 z1 = 1
 z2 = 1
 "z2修正" = 1
-"扭胯" = 1
+"扭胯" = 0.4
 "位置x" = 1
 "眉上下" = 1
 "眼眶L" = 1
@@ -30,18 +30,18 @@ z2 = 1
 "侧发右" = 1
 "前发y" = 1
 "后发x" = 1
-"整体x" = 1
-"整体y" = 1
+"整体x" = 0.8
+"整体y" = 0.8
 "胳膊l" = 1
 "胳膊r" = 1
-"袖子L" = 1
-"袖子R" = 1
+"袖子L" = 0.8
+"袖子R" = 0.8
 "蝴蝶结L" = 1
 "配饰" = 1
 "配饰(2)" = 1
 "蝴蝶结R" = 1
-"胸x" = 1
-"胸y" = 1
+"胸x" = 1.1
+"胸y" = 1.1
 "裙子x" = 1
 "裙子y" = 1
 "总群贼x" = 1
@@ -55,11 +55,11 @@ z2 = 1
 "柔软物体y" = 1
 "情绪耳朵" = 1
 "情绪耳朵(2)" = 1
-"猫耳" = 1
-"尾巴" = 1
-"猫耳(2)" = 1
-"嘴巴张开" = 1
-"嘴宽" = 1
+"猫耳" = 0.5
+"尾巴" = 2
+"猫耳(2)" = 0.5
+"嘴巴张开" = 0.8
+"嘴宽" = 0.9
 "摇杆xy" = 1
 
 [expressions."加载中"]
@@ -170,7 +170,7 @@ active = false
 [expressions."猫耳"]
 file = "猫耳.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."生气"]
 file = "生气.exp3.json"
@@ -185,7 +185,7 @@ active = false
 [expressions."短发"]
 file = "短发.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."耳机"]
 file = "耳机.exp3.json"
@@ -223,6 +223,6 @@ key = ""
 active = false
 
 [pos]
-x = 326.8704136649348
-y = 442.55595827487696
-scale = 0.14986805579784404
+x = 323.5514358061045
+y = 933.4025942038447
+scale = 0.3741868527671599

@@ -39,7 +39,7 @@ PIXI.Ticker.shared.maxFPS = config.renderFps;
 	console.log("WebGL renderer:", dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "(masked)");
 }
 
-mountFps(app);
+mountFps(app, config.showFps);
 setupWindowControls();
 
 if (!modelConfig.location || !modelConfig.model) {
@@ -61,5 +61,7 @@ if (!modelConfig.location || !modelConfig.model) {
 	startFaceTracking(model, config, modelConfig).catch((err) =>
 		console.warn("Face tracking disabled:", err),
 	);
-	setupExpressions(model, modelConfig).catch((err) => console.warn("Expressions disabled:", err));
+	setupExpressions(model, modelConfig, config.showExpressions).catch((err) =>
+		console.warn("Expressions disabled:", err),
+	);
 }

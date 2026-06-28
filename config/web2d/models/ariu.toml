@@ -1,4 +1,4 @@
-location = "model/ariu"
+location = "/Users/maot27/Documents/live2dModels/ariu"
 model = "ariu.model3.json"
 
 [expressions.circle_eyes]

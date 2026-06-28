@@ -56,4 +56,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		set: (accelerator: string): Promise<boolean> =>
 			ipcRenderer.invoke("config:set-hotkey", accelerator),
 	},
+
+	// Live show/hide of the FPS counter and expression list, toggled from the tray.
+	// Each returns an unsubscribe function.
+	ui: {
+		onShowFps: (cb: (visible: boolean) => void): (() => void) =>
+			subscribe("ui:show-fps", cb),
+		onShowExpressions: (cb: (visible: boolean) => void): (() => void) =>
+			subscribe("ui:show-expressions", cb),
+	},
 });
+
+function subscribe(channel: string, cb: (visible: boolean) => void): () => void {
+	const listener = (_e: unknown, visible: boolean) => cb(visible);
+	ipcRenderer.on(channel, listener);
+	return () => ipcRenderer.removeListener(channel, listener);
+}

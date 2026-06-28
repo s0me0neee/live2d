@@ -28,6 +28,9 @@ export interface Config {
 	camera: { width: number; height: number };
 
 	lockHotkey: string;
+
+	showFps: boolean;
+	showExpressions: boolean;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -50,6 +53,8 @@ export const DEFAULT_CONFIG: Config = {
 	detectFps: 60,
 	camera: { width: 1080, height: 960 },
 	lockHotkey: "CommandOrControl+Alt+L",
+	showFps: true,
+	showExpressions: true,
 };
 
 // Live transform persisted as the user drags/zooms.
@@ -89,6 +94,17 @@ export interface ModelConfig {
 	// model's .physics3.json). On disk only the value (multiplier) is stored.
 	gain: Record<string, GainSetting>;
 
+	// Param ids the head-pose drives. Normally ParamAngleX/Y/Z, but when the model's
+	// physics OUTPUTS those (driving the head as secondary motion) we must instead
+	// write the physics INPUT that feeds them, or physics clobbers our value each
+	// frame. Discovered from the .physics3.json; not persisted (fully derived).
+	headAngle: { x: string; y: string; z: string };
+
+	// ParamBodyAngle* params the model's physics already derives from the head pose.
+	// We leave these to physics rather than overriding them with a linear body-follow
+	// (which can fight physics and invert the lean). Discovered; not persisted.
+	physicsBodyParams: string[];
+
 	pos?: Pos; // absent until the user first drags/zooms → first load centers at scale 1
 	expressions: Record<string, Expression>;
 }
@@ -99,6 +115,8 @@ export const DEFAULT_MODEL_CONFIG: Omit<ModelConfig, "expressions" | "pos"> = {
 	location: "",
 	model: "",
 	gain: {},
+	headAngle: { x: "ParamAngleX", y: "ParamAngleY", z: "ParamAngleZ" },
+	physicsBodyParams: [],
 };
 
 export interface ResolvedConfig {

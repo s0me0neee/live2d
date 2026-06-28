@@ -1,6 +1,6 @@
-model = "ariu"
+model = "zero"
 mirror = true
-smoothing = 0.65
+smoothing = 0.6
 headGain = 1.5
 headClampDeg = 90
 bodyFollow = 0.3333333333333333
@@ -8,6 +8,8 @@ breath = 0.2
 renderFps = 120
 detectFps = 60
 lockHotkey = "Command+Shift+Z"
+showFps = true
+showExpressions = true
 
 [physics]
 windEnabled = false
@@ -21,21 +23,21 @@ y = -0.03
 
 [eyes]
 deadzone = 0
-curve = 1
-gain = 1.2
-gazeGain = 1
+curve = 1.5
+gain = 1.3
+gazeGain = 1.1
 
 [jaw]
-deadzone = 0.004
-curve = 0.22
-gain = 1
+deadzone = 0.005
+curve = 0.16
+gain = 0.9
 
 [camera]
 width = 1200
 height = 1200
 
 [window]
-x = 1069
-y = 627
-width = 640
-height = 480
+x = 943
+y = 226
+width = 729
+height = 799

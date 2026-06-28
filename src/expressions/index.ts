@@ -16,7 +16,11 @@ interface LoadedExpression {
 // Independent outfit/face toggles: several can be on at once. Applied imperatively
 // on toggle (Cubism keeps the last written value) and reset to default on off.
 // On/off state is restored from, and persisted back into, the model's TOML.
-export async function setupExpressions(model: Live2DModel, modelConfig: ModelConfig): Promise<void> {
+export async function setupExpressions(
+	model: Live2DModel,
+	modelConfig: ModelConfig,
+	visible: boolean,
+): Promise<void> {
 	const defs: LoadedExpression[] = await Promise.all(
 		Object.entries(modelConfig.expressions).map(async ([name, e]) => {
 			const data = await fetch(`/${modelConfig.location}/${e.file}`).then((r) => r.json());
@@ -47,7 +51,12 @@ export async function setupExpressions(model: Live2DModel, modelConfig: ModelCon
 		if (persist) window.electronAPI?.setExpression(d.name, on).catch(() => {});
 	};
 
-	buildPanel(defs, setActive);
+	const panel = buildPanel(defs, setActive);
+	const setVisible = (v: boolean) => {
+		panel.style.display = v ? "" : "none";
+	};
+	setVisible(visible);
+	window.electronAPI?.ui?.onShowExpressions(setVisible);
 
 	for (const d of defs) {
 		if (modelConfig.expressions[d.name]?.active) setActive(d, true, false);
@@ -63,7 +72,7 @@ export async function setupExpressions(model: Live2DModel, modelConfig: ModelCon
 function buildPanel(
 	defs: LoadedExpression[],
 	setActive: (d: LoadedExpression, on: boolean) => void,
-): void {
+): HTMLDivElement {
 	const panel = document.createElement("div");
 	panel.id = "expr-panel";
 
@@ -86,4 +95,5 @@ function buildPanel(
 		panel.appendChild(label);
 	}
 	document.body.appendChild(panel);
+	return panel;
 }
