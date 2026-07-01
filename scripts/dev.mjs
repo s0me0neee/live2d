@@ -1,10 +1,14 @@
 // Dev orchestrator: build the Electron shell, start the Vite dev server, wait
 // for it, then launch Electron pointed at it. Kills the dev server on exit.
+//
+//   node scripts/dev.mjs          normal dev (NODE_ENV=development)
+//   node scripts/dev.mjs --perf   NODE_ENV=production + Metal/GPU flags (macOS)
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const PORT = 1420;
 const URL = `http://localhost:${PORT}`;
+const PERF = process.argv.includes("--perf");
 
 async function run(cmd, args, opts = {}) {
 	return new Promise((res, rej) => {
@@ -56,14 +60,22 @@ vite.on("exit", () => {
 
 // 3. Wait for it, then launch Electron.
 await waitForServer(URL);
-electron = spawn("pnpm", ["exec", "electron", "."], {
+
+// --perf: NODE_ENV=production removes Pixi/framework debug paths; --use-angle=metal
+// switches WebGL to the Metal backend on macOS (lower driver overhead than ANGLE/GL).
+const perfArgs = PERF
+	? ["--use-angle=metal", "--enable-gpu-rasterization", "--enable-zero-copy"]
+	: [];
+const perfEnv = PERF ? { NODE_ENV: "production" } : {};
+
+electron = spawn("pnpm", ["exec", "electron", ...perfArgs, "."], {
 	// pipe stderr so we can drop the harmless boot/teardown spam (system
 	// fontconfig "invalid constant" warnings + Chromium's wayland teardown
 	// lines) that would otherwise bury the app's own logs.
 	stdio: ["inherit", "inherit", "pipe"],
 	// ELECTRON_OZONE_PLATFORM_HINT is read earlier than the in-app commandLine switch,
 	// so set it here too to get the native Wayland backend (correct devicePixelRatio).
-	env: { ...process.env, ELECTRON_RENDERER_URL: URL, ELECTRON_OZONE_PLATFORM_HINT: "auto" },
+	env: { ...process.env, ...perfEnv, ELECTRON_RENDERER_URL: URL, ELECTRON_OZONE_PLATFORM_HINT: "auto" },
 });
 
 const NOISE = /Fontconfig warning|wayland_event_watcher|libwayland:/;

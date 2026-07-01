@@ -2,9 +2,9 @@ location = "/Users/maot27/Documents/live2dModels/zero"
 model = "机能少女-零.model3.json"
 
 [gain]
-"*y" = 0.8
-"*x" = 0.8
-"*z" = 0.8
+"*y" = 0.9
+"*x" = 0.9
+"*z" = 0.9
 y = 1
 YY = 1
 x = 1
@@ -13,7 +13,7 @@ x = 1
 z1 = 1
 z2 = 1
 "z2修正" = 1
-"扭胯" = 0.4
+"扭胯" = 0.5
 "位置x" = 1
 "眉上下" = 1
 "眼眶L" = 1
@@ -58,8 +58,8 @@ z2 = 1
 "猫耳" = 0.5
 "尾巴" = 2
 "猫耳(2)" = 0.5
-"嘴巴张开" = 0.8
-"嘴宽" = 0.9
+"嘴巴张开" = 1
+"嘴宽" = 1
 "摇杆xy" = 1
 
 [expressions."加载中"]
@@ -80,7 +80,7 @@ active = false
 [expressions."右手动作"]
 file = "右手动作.exp3.json"
 key = "4"
-active = false
+active = true
 
 [expressions."右摇杆R1"]
 file = "右摇杆R1.exp3.json"
@@ -223,6 +223,6 @@ key = ""
 active = false
 
 [pos]
-x = 411.9133395157942
-y = 898.6137610655401
-scale = 0.40333007806712334
+x = 460.2811517238634
+y = 778.8895286695936
+scale = 0.3204592999246231

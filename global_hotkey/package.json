@@ -1,0 +1,19 @@
+{
+	"name": "@web2d/global-hotkey",
+	"version": "0.1.0",
+	"main": "index.js",
+	"napi": {
+		"binaryName": "global-hotkey",
+		"targets": [
+			"x86_64-unknown-linux-gnu",
+			"aarch64-unknown-linux-gnu",
+			"aarch64-apple-darwin"
+		]
+	},
+	"scripts": {
+		"build": "napi build --platform",
+		"build:debug": "napi build --platform --profile dev"
+	},
+	"types": "index.d.ts",
+	"license": "MIT"
+}

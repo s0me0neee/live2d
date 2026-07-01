@@ -3,9 +3,9 @@ mirror = true
 smoothing = 0.6
 headGain = 1.1
 headClampDeg = 90
-bodyFollow = 0.3333333333333333
-breath = 0.2
-renderFps = 120
+bodyFollow = 0.4
+breath = 0.4
+renderFps = 80
 detectFps = 45
 lockHotkey = "Command+Shift+Z"
 showFps = false
@@ -16,7 +16,7 @@ recenterHotkey = "Command+Shift+R"
 windEnabled = false
 gust = 0.05
 gustHz = 0.5
-springiness = 1.02
+springiness = 1.015
 
 [physics.wind]
 x = 0.03
@@ -24,21 +24,21 @@ y = -0.03
 
 [eyes]
 deadzone = 0
-curve = 1.6
-gain = 1.4
+curve = 1.8
+gain = 1
 gazeGain = 1.1
 
 [jaw]
-deadzone = 0.0055
-curve = 0.15
-gain = 0.9
+deadzone = 0.0045
+curve = 0.2
+gain = 1
 
 [camera]
-width = 740
-height = 580
+width = 720
+height = 405
 
 [window]
-x = 720
-y = 214
-width = 785
-height = 590
+x = 1018
+y = 430
+width = 690
+height = 677
