@@ -23,9 +23,19 @@ function tagColor(tag: string): (s: string) => string {
 
 const timestamp = () => pc.gray(new Date().toTimeString().slice(0, 8));
 
+// If the launching terminal dies, the app survives orphaned with a dead stdout;
+// without an error listener the next write raises EIO/EPIPE as an uncaught
+// exception (crash dialog from e.g. the lock hotkey's log line). Swallow it —
+// logging must never take the overlay down.
+for (const stream of [process.stdout, process.stderr]) stream.on("error", () => {});
+
 function emit(level: keyof typeof LEVEL, coloredTag: string, args: unknown[]): void {
 	const { badge, stream } = LEVEL[level];
-	stream.write(`${timestamp()} ${badge} ${coloredTag} ${format(...args)}\n`);
+	try {
+		stream.write(`${timestamp()} ${badge} ${coloredTag} ${format(...args)}\n`);
+	} catch {
+		// a destroyed stream throws synchronously
+	}
 }
 
 export interface Logger {
