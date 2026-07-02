@@ -130,7 +130,7 @@ active = false
 [expressions."披发"]
 file = "披发.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."星星眼"]
 file = "星星眼.exp3.json"
@@ -223,6 +223,6 @@ key = ""
 active = false
 
 [pos]
-x = 460.2811517238634
-y = 778.8895286695936
-scale = 0.3204592999246231
+x = 321.93351103951136
+y = 804.9451766824578
+scale = 0.35951477640833673

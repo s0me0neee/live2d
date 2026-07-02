@@ -24,21 +24,21 @@ y = -0.03
 
 [eyes]
 deadzone = 0
-curve = 1.8
+curve = 1
 gain = 1
 gazeGain = 1.1
 
 [jaw]
 deadzone = 0.0045
-curve = 0.2
-gain = 1
+curve = 0.18
+gain = 1.2
 
 [camera]
 width = 720
 height = 405
 
 [window]
-x = 1018
-y = 430
-width = 690
-height = 677
+x = 1100
+y = 32
+width = 653
+height = 613
