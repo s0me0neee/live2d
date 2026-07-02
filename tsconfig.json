@@ -9,7 +9,6 @@
 			"DOM.Iterable"
 		],
 		"types": [
-			"node",
 			"bun"
 		],
 		"skipLibCheck": true,

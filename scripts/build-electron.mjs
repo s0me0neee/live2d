@@ -14,9 +14,9 @@ await build({
 	target: "node20",
 	format: "cjs",
 	sourcemap: true,
-	// electron + koffi (native addon) must stay external and resolve from
-	// node_modules at runtime; they can't be bundled.
-	external: ["electron", "koffi"],
+	// electron + native addons (koffi, the global-hotkey napi module) must stay
+	// external and resolve from node_modules at runtime; they can't be bundled.
+	external: ["electron", "koffi", "@web2d/global-hotkey"],
 });
 
 console.log("built dist-electron/{main,preload}.cjs");

@@ -587,8 +587,4 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
-module.exports.Kkkkk = nativeBinding.Kkkkk
-module.exports.kkkkk = nativeBinding.kkkkk
-module.exports.Wwqe = nativeBinding.Wwqe
-module.exports.wwqe = nativeBinding.wwqe
-module.exports.eeeee = nativeBinding.eeeee
+module.exports.start = nativeBinding.start

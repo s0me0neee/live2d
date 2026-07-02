@@ -11,7 +11,7 @@
 		]
 	},
 	"scripts": {
-		"build": "napi build --platform",
+		"build": "napi build --platform --release",
 		"build:debug": "napi build --platform --profile dev"
 	},
 	"types": "index.d.ts",
