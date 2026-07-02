@@ -63,6 +63,18 @@ export async function saveWindowBounds(bounds: WindowBounds): Promise<void> {
 	await writeToml(configFile, root);
 }
 
+// Synchronous variant for the quit path (will-quit can't await; on Linux the final
+// geometry is read from the compositor there).
+export function saveWindowBoundsSync(bounds: WindowBounds): void {
+	try {
+		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		root.window = bounds;
+		writeFileSync(configFile, stringify(root));
+	} catch (e) {
+		log.warn("saveWindowBoundsSync failed:", e);
+	}
+}
+
 const HOTKEY_TOML_KEY: Record<HotkeyId, "lockHotkey" | "recenterHotkey"> = {
 	lock: "lockHotkey",
 	recenter: "recenterHotkey",

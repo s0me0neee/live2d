@@ -10,8 +10,7 @@ import {
 } from "electron";
 import { join, sep } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { execFile, execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { applyMacOverlay } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
@@ -26,6 +25,7 @@ import {
 	savePosSync,
 	saveUiToggle,
 	saveWindowBounds,
+	saveWindowBoundsSync,
 	setExpressionActive,
 	setHotkey,
 	type UiToggle,
@@ -37,12 +37,12 @@ const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 
 const log = createLogger("main");
 
-// Window locking (click-through via setIgnoreMouseEvents) and the OS-window
-// move/resize guide are disabled on Linux: a Wayland client can't self-position, and
-// the only ways back out of click-through are the global hotkey (not wired for
-// Wayland) and the tray (needs an SNI host), so locking there can strand the overlay.
-// Gated on `linux` specifically — macOS works today and Windows keeps these for
-// future support.
+// The OS-window move/resize guide is disabled on Linux: a Wayland client can't
+// self-position, so the guide's setBounds-based drag can't work (the window is created
+// `resizable` for native resize instead). Window locking (click-through) IS enabled on
+// Linux — the portal lock hotkey and the tray Lock item both give a way back out of
+// click-through, so it can no longer strand the overlay. Gated on `linux` specifically;
+// macOS/Windows keep the guide.
 const IS_LINUX = process.platform === "linux";
 
 // Use the native Wayland Ozone backend on Linux instead of falling back to XWayland.
@@ -121,14 +121,13 @@ ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 ipcMain.handle("config:get-hotkey", (_e, id: HotkeyId) => (id in hotkeys ? hotkeys[id] : ""));
 ipcMain.handle("config:set-hotkey", async (_e, id: HotkeyId, accelerator: string) => {
 	if (typeof accelerator !== "string" || !(id in hotkeys)) return false;
-	if (id === "lock" && IS_LINUX) return false; // lock system disabled on Linux
 	if (IS_LINUX) {
 		// The portal shortcut id is bound once at startup; the accelerator is only an
 		// advisory preferredTrigger there. But when hyprlandAutoBind is on we drive the
-		// real key via hyprctl, so a change can take effect live.
+		// real key via the compositor keyword IPC, so a change can take effect live.
 		hotkeys[id] = accelerator;
 		await setHotkey(id, accelerator);
-		if (id === "recenter" && loadHyprlandAutoBindSync()) applyHyprlandBind(accelerator);
+		if (loadHyprlandAutoBindSync()) applyHyprlandBind(id, accelerator);
 		return true;
 	}
 	if (!applyHotkey(id, accelerator)) return false;
@@ -184,11 +183,12 @@ let overlayLocked = false;
 let refreshTrayMenu: () => void = () => { };
 
 function setOverlayLock(win: BrowserWindow, locked: boolean): void {
-	if (IS_LINUX) return; // lock disabled on Linux; overlay stays clickable
 	overlayLocked = locked;
 	if (win.isDestroyed()) return; // hotkey/tray callbacks fire async; window may be gone
-	// forward:true still delivers mousemove (for hover) while clicks pass through.
+	// forward:true still delivers mousemove (for hover) while clicks pass through — but
+	// it's macOS/Windows-only, so hover reactions while locked are lost on Linux/Wayland.
 	win.setIgnoreMouseEvents(locked, { forward: true });
+	if (IS_LINUX) applyHyprlandLock(locked); // toggle the pin/float/no-focus overlay rules
 	win.webContents.send("overlay:lock-changed", locked);
 	refreshTrayMenu();
 	log.info(`overlay ${locked ? color.yellow("locked (click-through)") : color.green("unlocked (clickable)")}`);
@@ -214,6 +214,10 @@ const HOTKEY_ACTION: Record<HotkeyId, () => void> = {
 		log.info("recenter face tracking");
 		overlayWindow()?.webContents.send("face:recenter");
 	},
+};
+const HOTKEY_DESCRIPTION: Record<HotkeyId, string> = {
+	lock: "Toggle click-through lock",
+	recenter: "Recenter face tracking",
 };
 const hotkeys: Record<HotkeyId, string> = {
 	lock: DEFAULT_CONFIG.lockHotkey,
@@ -251,9 +255,10 @@ function applyHotkey(id: HotkeyId, accelerator: string): boolean {
 // globalShortcut can't: it never declares an app id to the portal, so the compositor
 // rejects its session). We drive the portal from the `global_hotkey` native module,
 // which registers shortcut *ids*; the user binds real keys in the compositor config
-// (e.g. hyprland.conf: `bind = CTRL ALT, R, global, web2d:recenter`). The config
+// (e.g. hyprland.conf: `bind = CTRL ALT, R, global, web2d:recenter`), or lets
+// hyprlandAutoBind drive `overlay_hyprland.setKeyword("bind", …)`. The config
 // accelerator is only an advisory `preferredTrigger` — compositors like Hyprland ignore
-// it. Lock stays disabled on Linux, so only `recenter` is registered.
+// it. Both `lock` and `recenter` are registered.
 const PORTAL_APP_ID = "web2d";
 
 interface GlobalHotkeyModule {
@@ -264,16 +269,197 @@ interface GlobalHotkeyModule {
 	): void;
 }
 
+// Runtime compositor control (Hyprland). `setKeyword` is the reply-checked `hyprctl
+// keyword` equivalent over the IPC socket; `setWindowRules` applies dynamic
+// `windowrule[<name>]:<prop> <value>` keywords (value "unset" clears one).
+interface WindowRule {
+	prop: string;
+	value: string;
+}
+interface HyprlandClient {
+	address: string;
+	pid: number;
+	class: string;
+	title: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+interface OverlayHyprlandModule {
+	isHyprland(): boolean;
+	setKeyword(key: string, value: string): void;
+	setWindowRules(name: string, rules: WindowRule[]): void;
+	getClients(): HyprlandClient[];
+	moveWindowTo(address: string, x: number, y: number): void;
+	resizeWindowTo(address: string, width: number, height: number): void;
+}
+
+// undefined = not yet attempted; null = load failed (off-Linux, or module missing).
+let hyprMod: OverlayHyprlandModule | null | undefined;
+function hyprland(): OverlayHyprlandModule | null {
+	if (hyprMod !== undefined) return hyprMod;
+	try {
+		hyprMod = require("@web2d/overlay_hyprland") as OverlayHyprlandModule;
+		log.debug("overlay_hyprland native module loaded");
+	} catch (e) {
+		log.warn("overlay_hyprland native module unavailable; compositor control disabled:", e);
+		hyprMod = null;
+	}
+	return hyprMod;
+}
+
+// Cached so the per-lock-toggle rule application doesn't re-probe (and so it stays
+// silent on non-Hyprland Linux instead of warning on every toggle).
+let isHyprlandSession: boolean | undefined;
+function onHyprland(): boolean {
+	if (isHyprlandSession !== undefined) return isHyprlandSession;
+	const h = hyprland();
+	try {
+		isHyprlandSession = h ? h.isHyprland() : false;
+	} catch {
+		isHyprlandSession = false;
+	}
+	return isHyprlandSession;
+}
+
+// The Linux analogue of applyMacOverlay, via `windowrule[web2d]:…`. Split like the mac
+// path: BASE is always on (applied at startup), LOCK is the no-focus overlay behaviour
+// toggled with the lock — so unlocked the window is a normal focusable, bordered,
+// movable window and locked it's a click-through overlay. `float` and `pin` live in BASE
+// and are never toggled: the overlay is always floating (a tiled overlay couldn't be
+// freely moved) and always pinned across workspaces, whether locked or not.
+const HYPRLAND_RULE_SELECTOR = "web2d";
+const HYPRLAND_BASE_RULES: WindowRule[] = [
+	{ prop: "opacity", value: "1.0 override 1.0 override 1.0 override" },
+	{ prop: "float", value: "true" },
+	{ prop: "pin", value: "true" },
+];
+const HYPRLAND_LOCK_RULES: WindowRule[] = [
+	{ prop: "no_focus", value: "true" },
+	{ prop: "border_size", value: "0" },
+	{ prop: "no_blur", value: "true" },
+	{ prop: "no_dim", value: "true" },
+	{ prop: "no_shadow", value: "true" },
+	{ prop: "no_follow_mouse", value: "true" },
+];
+// Unlock flips each rule to its off value (not "unset") so the change is explicit;
+// border_size 5 keeps the window visibly bordered/findable while it's movable.
+const HYPRLAND_UNLOCK_RULES: WindowRule[] = [
+	{ prop: "no_focus", value: "false" },
+	{ prop: "border_size", value: "5" },
+	{ prop: "no_blur", value: "false" },
+	{ prop: "no_dim", value: "false" },
+	{ prop: "no_shadow", value: "false" },
+	{ prop: "no_follow_mouse", value: "false" },
+];
+const clearedRules = (rules: WindowRule[]): WindowRule[] =>
+	rules.map((r) => ({ prop: r.prop, value: "unset" }));
+
+function applyHyprlandRules(rules: WindowRule[]): boolean {
+	if (!onHyprland()) return false;
+	const h = hyprland();
+	if (!h) return false;
+	try {
+		h.setWindowRules(HYPRLAND_RULE_SELECTOR, rules);
+		return true;
+	} catch (e) {
+		log.warn(`hyprland window rules failed: ${(e as Error).message}`);
+		return false;
+	}
+}
+
+// Startup: apply the always-on rules (opacity + float + pin). The overlay no-focus set
+// follows the lock (setOverlayLock → applyHyprlandLock).
+function startLinuxOverlayRules(): void {
+	if (!onHyprland()) {
+		log.info("not a Hyprland session; skipping overlay window rules");
+		return;
+	}
+	if (applyHyprlandRules(HYPRLAND_BASE_RULES)) {
+		log.ok(`hyprland base window rules applied ${color.gray("(opacity, float, pin)")}`);
+	}
+}
+
+function applyHyprlandLock(locked: boolean): void {
+	if (!onHyprland()) return;
+	if (applyHyprlandRules(locked ? HYPRLAND_LOCK_RULES : HYPRLAND_UNLOCK_RULES)) {
+		log.debug(`hyprland overlay rules ${locked ? "applied" : "cleared"}`);
+	}
+}
+
+// Our overlay window as the compositor sees it. The Electron main process owns the
+// Wayland connection, so Hyprland reports our windows under process.pid; the settings
+// window shares that pid but has a distinct title ("web2d settings"), so match the
+// overlay by its exact title.
+function overlayHyprlandClient(): HyprlandClient | null {
+	const h = hyprland();
+	if (!h) return null;
+	try {
+		const mine = h.getClients().filter((c) => c.pid === process.pid);
+		return mine.find((c) => c.title === "web2d") ?? mine[0] ?? null;
+	} catch (e) {
+		log.warn(`hyprland getClients failed: ${(e as Error).message}`);
+		return null;
+	}
+}
+
+// Wayland won't let Electron self-position, so restore the saved geometry by dispatching
+// move/resize on the mapped window (the Linux analogue of createWindow's x/y/w/h). The
+// window maps a moment after showInactive(), so retry until it appears in getClients.
+function restoreLinuxBounds(): void {
+	if (!onHyprland() || !savedBounds) return;
+	const target = savedBounds;
+	let attempts = 0;
+	const tryRestore = (): void => {
+		const c = overlayHyprlandClient();
+		if (!c) {
+			if (attempts++ < 20) return void setTimeout(tryRestore, 100);
+			log.warn("hyprland: overlay window not found in clients; can't restore bounds");
+			return;
+		}
+		const h = hyprland();
+		if (!h) return;
+		try {
+			h.resizeWindowTo(c.address, target.width, target.height);
+			h.moveWindowTo(c.address, target.x, target.y);
+			log.ok(`hyprland restored bounds ${color.gray(`${target.width}×${target.height} @ (${target.x},${target.y})`)}`);
+		} catch (e) {
+			log.warn(`hyprland restore bounds failed: ${(e as Error).message}`);
+		}
+	};
+	tryRestore();
+}
+
+// Best-effort `hyprctl keyword`; a rejected keyword throws (setKeyword checks the
+// reply), which we log rather than propagate.
+function hyprSetKeyword(key: string, value: string): boolean {
+	const h = hyprland();
+	if (!h) return false;
+	try {
+		h.setKeyword(key, value);
+		log.debug(`hypr keyword ${key} ${value} → ok`);
+		return true;
+	} catch (e) {
+		log.warn(`hypr keyword "${key} ${value}" failed (not a Hyprland session?): ${(e as Error).message}`);
+		return false;
+	}
+}
+
 // The host portal registry only accepts an app id that resolves to a loadable .desktop
 // whose Exec points at a real binary. process.execPath is always absolute + resolvable
 // (the portal never execs it — Exec is used purely for app-id validation).
 function ensureDesktopEntry(): void {
 	const dir = join(homedir(), ".local", "share", "applications");
 	const file = join(dir, `${PORTAL_APP_ID}.desktop`);
-	if (existsSync(file)) return;
+	const desired = `[Desktop Entry]\nType=Application\nName=web2d\nExec=${process.execPath}\n`;
 	try {
+		// Rewrite when stale, not just when missing: an Electron upgrade changes
+		// process.execPath, and a .desktop whose Exec points at the removed binary fails
+		// GDesktopAppInfo, so the portal rejects Registry.Register ("App info not found").
+		if (existsSync(file) && readFileSync(file, "utf8") === desired) return;
 		mkdirSync(dir, { recursive: true });
-		writeFileSync(file, `[Desktop Entry]\nType=Application\nName=web2d\nExec=${process.execPath}\n`);
+		writeFileSync(file, desired);
 		log.info(`wrote portal .desktop ${color.gray(file)}`);
 	} catch (e) {
 		log.warn("could not write .desktop for portal registration:", e);
@@ -311,7 +497,8 @@ function toPortalTrigger(accelerator: string): string {
 }
 
 function startLinuxGlobalShortcuts(): void {
-	log.info(`linux global shortcuts: starting (recenter accelerator = ${color.cyan(hotkeys.recenter || "(unbound)")})`);
+	const ids = Object.keys(HOTKEY_ACTION) as HotkeyId[];
+	log.info(`linux global shortcuts: starting (${ids.map((id) => `${id}=${hotkeys[id] || "(unbound)"}`).join(", ")})`);
 	let gh: GlobalHotkeyModule;
 	try {
 		gh = require("@web2d/global-hotkey") as GlobalHotkeyModule;
@@ -321,26 +508,26 @@ function startLinuxGlobalShortcuts(): void {
 		return;
 	}
 	ensureDesktopEntry();
-	const preferredTrigger = toPortalTrigger(hotkeys.recenter);
-	log.info(`registering portal shortcut ${color.gray(`app=${PORTAL_APP_ID} id=recenter preferredTrigger=${preferredTrigger || "(none)"}`)}`);
+	const shortcuts = ids.map((id) => ({
+		id,
+		description: HOTKEY_DESCRIPTION[id],
+		preferredTrigger: toPortalTrigger(hotkeys[id]),
+	}));
+	log.info(`registering portal shortcuts ${color.gray(`app=${PORTAL_APP_ID} ids=[${ids.join(", ")}]`)}`);
 	try {
-		gh.start(
-			PORTAL_APP_ID,
-			[{ id: "recenter", description: "Recenter face tracking", preferredTrigger }],
-			(err, id) => {
-				if (err) return log.warn("global-hotkey activation error:", err);
-				log.info(`global shortcut activated: ${color.cyan(id)}`);
-				const shortcutId = id.includes(":") ? (id.split(":").pop() as string) : id;
-				const action = HOTKEY_ACTION[shortcutId as HotkeyId];
-				if (action) {
-					log.debug(`running action for "${shortcutId}"`);
-					action();
-				} else {
-					log.warn(`activated shortcut "${id}" has no action (parsed id "${shortcutId}")`);
-				}
-			},
-		);
-		log.ok(`portal global shortcuts registered ${color.gray(`(${PORTAL_APP_ID}:recenter)`)}`);
+		gh.start(PORTAL_APP_ID, shortcuts, (err, id) => {
+			if (err) return log.warn("global-hotkey activation error:", err);
+			log.info(`global shortcut activated: ${color.cyan(id)}`);
+			const shortcutId = id.includes(":") ? (id.split(":").pop() as string) : id;
+			const action = HOTKEY_ACTION[shortcutId as HotkeyId];
+			if (action) {
+				log.debug(`running action for "${shortcutId}"`);
+				action();
+			} else {
+				log.warn(`activated shortcut "${id}" has no action (parsed id "${shortcutId}")`);
+			}
+		});
+		log.ok(`portal global shortcuts registered ${color.gray(`(${ids.map((id) => `${PORTAL_APP_ID}:${id}`).join(", ")})`)}`);
 	} catch (e) {
 		log.warn("portal global-shortcut registration failed:", e);
 		return;
@@ -349,47 +536,37 @@ function startLinuxGlobalShortcuts(): void {
 	const autoBind = loadHyprlandAutoBindSync();
 	log.info(`hyprlandAutoBind = ${autoBind ? color.green("true") : color.gray("false")}`);
 	if (autoBind) {
-		applyHyprlandBind(hotkeys.recenter);
+		for (const id of ids) applyHyprlandBind(id, hotkeys[id]);
 	} else {
 		log.info(
 			color.gray(
-				`bind the shortcut in hyprland.conf (bind = <mods>, <key>, global, ${PORTAL_APP_ID}:recenter) or set hyprlandAutoBind = true`,
+				`bind the shortcuts in hyprland.conf (bind = <mods>, <key>, global, ${PORTAL_APP_ID}:<${ids.join("|")}>) or set hyprlandAutoBind = true`,
 			),
 		);
 	}
 }
 
-// hyprctl only ignores duplicate binds by stacking them, so we unbind before binding;
-// the same combo is unbound on quit. The registered portal shortcut itself lingers in
+// Hyprland only ignores duplicate binds by stacking them, so we unbind before binding;
+// the same combos are unbound on quit. The registered portal shortcut itself lingers in
 // `hyprctl globalshortcuts` (XDPH keeps it for the compositor's lifetime) but dedupes.
-let hyprlandBoundCombo: string | null = null;
+const hyprlandBoundCombos: Partial<Record<HotkeyId, string>> = {};
 
-function applyHyprlandBind(accelerator: string): void {
+function applyHyprlandBind(id: HotkeyId, accelerator: string): void {
 	const combo = toHyprlandCombo(accelerator);
 	if (!combo) {
 		log.warn(`hyprland auto-bind: could not derive a bind combo from "${accelerator}"`);
 		return;
 	}
-	const target = `${PORTAL_APP_ID}:recenter`;
-	const previous = hyprlandBoundCombo;
-	const hyprctl = (args: string[], done?: () => void) => {
-		log.debug(`hyprctl ${args.join(" ")}`);
-		execFile("hyprctl", args, (err, stdout, stderr) => {
-			const out = `${stdout ?? ""}${stderr ?? ""}`.trim();
-			if (err) log.warn(`hyprctl ${args.join(" ")} failed (not a Hyprland session?): ${err.message}${out ? ` — ${out}` : ""}`);
-			else log.debug(`hyprctl ${args.join(" ")} → ${out || "ok"}`);
-			done?.();
-		});
-	};
+	const target = `${PORTAL_APP_ID}:${id}`;
+	const previous = hyprlandBoundCombos[id];
 	// Drop the old combo (accelerator changed) and any stale/duplicate of the new one
-	// before binding, so hyprctl doesn't stack duplicate binds.
-	if (previous && previous !== combo) hyprctl(["keyword", "unbind", previous]);
-	hyprctl(["keyword", "unbind", combo], () => {
-		hyprctl(["keyword", "bind", `${combo}, global, ${target}`], () => {
-			log.ok(`hyprland auto-bind ${color.cyan(`${combo} → ${target}`)}`);
-		});
-	});
-	hyprlandBoundCombo = combo;
+	// before binding, so the compositor doesn't stack duplicate binds.
+	if (previous && previous !== combo) hyprSetKeyword("unbind", previous);
+	hyprSetKeyword("unbind", combo);
+	if (hyprSetKeyword("bind", `${combo}, global, ${target}`)) {
+		hyprlandBoundCombos[id] = combo;
+		log.ok(`hyprland auto-bind ${color.cyan(`${combo} → ${target}`)}`);
+	}
 }
 
 // Electron accelerator → hyprctl bind combo ("CommandOrControl+Alt+R" → "CTRL ALT, R").
@@ -438,6 +615,10 @@ function setUiToggle(key: UiToggle, value: boolean): void {
 	overlayWindow()?.webContents.send(UI_CHANNEL[key], value);
 	log.info(`${key} ${value ? color.green("on") : color.gray("off")}`);
 	saveUiToggle(key, value).catch((e) => log.warn(`save ${key} failed:`, e));
+	// Rebuild the whole menu so the checkbox repaints: on Linux the SNI/libdbusmenu
+	// item doesn't live-update its checkmark when `checked` changes — only a fresh
+	// setContextMenu does. (Harmless on macOS; the menu is already closed by click time.)
+	refreshTrayMenu();
 }
 
 // Registered once (not per-window) so re-creating the window can't double-register.
@@ -499,13 +680,20 @@ function createWindow(): void {
 	win.on("blur", () => applyMacOverlay(win));
 
 	// Linux has no renderer guide; the window is natively resizable, so persist the
-	// geometry the compositor gives us (debounced) to survive restart.
-	if (IS_LINUX) win.on("resize", () => persistBounds(win.getBounds()));
+	// geometry on resize (debounced) to survive restart. Read it from the compositor,
+	// not win.getBounds() — on Wayland Electron's reported position isn't trustworthy.
+	if (IS_LINUX) {
+		win.on("resize", () => {
+			const c = overlayHyprlandClient();
+			if (c) persistBounds({ x: c.x, y: c.y, width: c.width, height: c.height });
+		});
+	}
 
 	win.once("ready-to-show", () => {
 		win.showInactive(); // show without taking focus
 		applyMacOverlay(win);
 		setOverlayLock(win, overlayLocked);
+		if (IS_LINUX) restoreLinuxBounds(); // Wayland ignores the window's creation x/y
 	});
 
 	if (DEV_URL) {
@@ -535,15 +723,11 @@ function createTray(): void {
 
 	refreshTrayMenu = () => {
 		const menu = Menu.buildFromTemplate([
-			...(IS_LINUX
-				? []
-				: [
-						{
-							label: overlayLocked ? "Unlock (make clickable)" : "Lock (click-through)",
-							accelerator: hotkeys.lock || undefined,
-							click: toggleLock,
-						},
-					]),
+			{
+				label: overlayLocked ? "Unlock (make clickable)" : "Lock (click-through)",
+				accelerator: hotkeys.lock || undefined,
+				click: toggleLock,
+			},
 			{
 				label: "Recenter face tracking",
 				accelerator: hotkeys.recenter || undefined,
@@ -560,13 +744,15 @@ function createTray(): void {
 				label: "Show FPS counter",
 				type: "checkbox",
 				checked: uiToggles.showFps,
-				click: (item) => setUiToggle("showFps", item.checked),
+				// Drive off our own state, not item.checked — libdbusmenu doesn't reliably
+				// pre-flip it on Linux, and setUiToggle rebuilds the menu to repaint anyway.
+				click: () => setUiToggle("showFps", !uiToggles.showFps),
 			},
 			{
 				label: "Show expression list",
 				type: "checkbox",
 				checked: uiToggles.showExpressions,
-				click: (item) => setUiToggle("showExpressions", item.checked),
+				click: () => setUiToggle("showExpressions", !uiToggles.showExpressions),
 			},
 			{ type: "separator" },
 			{ label: "Settings…", click: openSettings },
@@ -600,6 +786,7 @@ app.whenReady().then(() => {
 	const saved = loadHotkeysSync();
 	if (IS_LINUX) {
 		Object.assign(hotkeys, saved); // reflect saved accelerators (config:get-hotkey, preferredTrigger)
+		startLinuxOverlayRules();
 		startLinuxGlobalShortcuts();
 	} else {
 		for (const id of Object.keys(hotkeys) as HotkeyId[]) {
@@ -620,16 +807,25 @@ app.on("will-quit", () => {
 		log.info(`saving model position ${color.gray(`(${lastReportedPos.x.toFixed(0)},${lastReportedPos.y.toFixed(0)} @ ${lastReportedPos.scale.toFixed(2)}×)`)}`);
 		savePosSync(lastReportedPos);
 	}
-	globalShortcut.unregisterAll();
-	if (hyprlandBoundCombo) {
-		// Best-effort; sync so it lands before exit (won't run on SIGKILL — the next
-		// launch's unbind-before-bind cleans up a leftover either way).
-		try {
-			execFileSync("hyprctl", ["keyword", "unbind", hyprlandBoundCombo], { timeout: 1000 });
-		} catch {
-			// hyprctl missing or already gone; nothing to clean up
+	// Capture the final window geometry from the compositor (Wayland doesn't give it to
+	// Electron reliably). Note SIGTERM/SIGINT — how `pnpm dev` stops — skips will-quit;
+	// the debounced resize save in createWindow covers the geometry during the session.
+	clearTimeout(winSaveTimer);
+	if (IS_LINUX) {
+		const c = overlayHyprlandClient();
+		if (c) {
+			log.info(`saving window bounds ${color.gray(`${c.width}×${c.height} @ (${c.x},${c.y})`)}`);
+			saveWindowBoundsSync({ x: c.x, y: c.y, width: c.width, height: c.height });
 		}
 	}
+	globalShortcut.unregisterAll();
+	// Best-effort; setKeyword is synchronous so the unbind lands before exit (won't run
+	// on SIGKILL — the next launch's unbind-before-bind cleans up a leftover either way).
+	for (const combo of Object.values(hyprlandBoundCombos)) {
+		if (combo) hyprSetKeyword("unbind", combo);
+	}
+	// Rules are session-scoped and harmless if left, but undo them anyway (same as binds).
+	applyHyprlandRules(clearedRules([...HYPRLAND_BASE_RULES, ...HYPRLAND_LOCK_RULES]));
 	tray?.destroy(); // release the menubar icon so it can't linger as a ghost
 	tray = null;
 	log.info("quit");

@@ -1,0 +1,17 @@
+[package]
+name = "overlay_hyprland"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = "3.10.0"
+napi-derive = "3.5.8"
+# 0.3.x hardcodes /tmp/hypr for the IPC socket; modern Hyprland puts it under
+# $XDG_RUNTIME_DIR/hypr, so only the 0.4 line can connect at all.
+hyprland = { version = "0.4.0-beta.3", default-features = false, features = ["data", "dispatch"] }
+
+[build-dependencies]
+napi-build = "2.3.2"
