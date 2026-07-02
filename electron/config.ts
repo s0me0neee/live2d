@@ -146,11 +146,12 @@ async function loadModel(name: string): Promise<ModelConfig> {
 	const savedGain = parseGain(raw.gain);
 	const savedExpressions = parseExpressions(raw.expressions);
 
-	const routing = await discoverPhysicsRouting(location, modelJson);
+	const physics = await loadPhysics(location, modelJson);
+	const routing = discoverPhysicsRouting(physics);
 	const model: ModelConfig = {
 		location,
 		model: modelJson,
-		gain: await discoverGain(location, modelJson, savedGain),
+		gain: discoverGain(physics, savedGain),
 		headAngle: routing.headAngle,
 		physicsBodyParams: routing.physicsBodyParams,
 		expressions: await discoverExpressions(location, savedExpressions),
@@ -176,19 +177,20 @@ async function loadModel(name: string): Promise<ModelConfig> {
 	return model;
 }
 
-// Parse the model's .model3.json → its .physics3.json, then group each physics
-// setting's output params by the setting's human name. Each group keeps the
-// user's saved multiplier (default 1 = no change).
-async function discoverGain(
-	location: string,
-	modelJson: string,
-	saved: Record<string, number>,
-): Promise<Record<string, GainSetting>> {
+// Resolve the model's .model3.json → its .physics3.json and parse it once, shared
+// by the gain and routing discovery below. null when there's no physics file.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadPhysics(location: string, modelJson: string): Promise<any | null> {
 	const dir = resolveModelDir(location);
-
 	const physicsFile = (await readJson(join(dir, modelJson)))?.FileReferences?.Physics;
-	if (typeof physicsFile !== "string") return {};
-	const physics = await readJson(join(dir, physicsFile));
+	if (typeof physicsFile !== "string") return null;
+	return readJson(join(dir, physicsFile));
+}
+
+// Group each physics setting's output params by the setting's human name. Each
+// group keeps the user's saved multiplier (default 1 = no change).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function discoverGain(physics: any, saved: Record<string, number>): Record<string, GainSetting> {
 	if (!physics) return {};
 
 	const settingNames: Record<string, string> = {};
@@ -227,16 +229,12 @@ const toGainToml = (gain: Record<string, GainSetting>): Record<string, number> =
 //   - physicsBodyParams: ParamBodyAngle* the physics already derives from the head
 //     pose. We must NOT override those (their polarity/amount is the rigger's), or
 //     the body fights physics and can swing the wrong way.
-async function discoverPhysicsRouting(
-	location: string,
-	modelJson: string,
-): Promise<{ headAngle: ModelConfig["headAngle"]; physicsBodyParams: string[] }> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function discoverPhysicsRouting(physics: any): {
+	headAngle: ModelConfig["headAngle"];
+	physicsBodyParams: string[];
+} {
 	const fallback = { headAngle: DEFAULT_MODEL_CONFIG.headAngle, physicsBodyParams: [] };
-	const dir = resolveModelDir(location);
-
-	const physicsFile = (await readJson(join(dir, modelJson)))?.FileReferences?.Physics;
-	if (typeof physicsFile !== "string") return fallback;
-	const physics = await readJson(join(dir, physicsFile));
 	if (!physics) return fallback;
 
 	const inputFor: Record<string, string> = {};
