@@ -1,6 +1,6 @@
-import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { Config, ModelConfig } from "./config";
+import type { FaceResult, FaceWorkerInit, FaceWorkerMessage } from "./face-worker";
 
 // The Live2D parameters we drive from the webcam (with their value ranges).
 interface Rig {
@@ -30,20 +30,15 @@ const RIG_KEYS = Object.keys(neutral()) as (keyof Rig)[];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-// Reused across detections so the per-frame mapping allocates nothing. The
-// blendshape category set is identical every frame, so overwriting keys never
-// leaves stale entries.
-const blendshapes: Record<string, number> = {};
-const blendshape = (name: string) => blendshapes[name] ?? 0;
-
-// Throws if the camera is denied/unavailable, so the caller can run without tracking.
+// Throws if the camera is denied/unavailable or the worker's landmarker fails to
+// initialize, so the caller can run without tracking.
 export async function startFaceTracking(
 	model: Live2DModel,
 	config: Config,
 	modelConfig: ModelConfig,
 ): Promise<void> {
-	const video = await openCamera(config);
-	const landmarker = await createLandmarker();
+	const track = await openCamera(config);
+	const worker = await startDetectionWorker(track, config);
 
 	const target = neutral(); // latest detection
 	const rig = neutral(); // smoothed values actually applied
@@ -57,7 +52,9 @@ export async function startFaceTracking(
 		calibration.recenter = true;
 	});
 
-	startDetectionLoop(video, landmarker, target, config, calibration);
+	worker.onmessage = (e: MessageEvent<FaceWorkerMessage>) => {
+		if (e.data.type === "result") mapResult(e.data, target, config, calibration);
+	};
 	driveModel(model, rig, target, config, modelConfig);
 }
 
@@ -69,62 +66,41 @@ interface HeadCalibration {
 	recenter: boolean;
 }
 
-async function openCamera(config: Config): Promise<HTMLVideoElement> {
-	const video = document.createElement("video");
-	video.autoplay = true;
-	video.playsInline = true;
-	video.muted = true;
-	video.style.display = "none";
-	document.body.appendChild(video);
-
-	video.srcObject = await navigator.mediaDevices.getUserMedia({
+async function openCamera(config: Config): Promise<MediaStreamTrack> {
+	const stream = await navigator.mediaDevices.getUserMedia({
 		video: { ...config.camera, facingMode: "user" },
 		audio: false,
 	});
-	await video.play();
-	return video;
+	return stream.getVideoTracks()[0];
 }
 
-async function createLandmarker(): Promise<FaceLandmarker> {
-	// Dynamic import keeps MediaPipe out of the entry bundle so first paint isn't
-	// blocked parsing it; it loads while the model renders.
-	const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
-	const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-	return FaceLandmarker.createFromOptions(fileset, {
-		baseOptions: {
-			modelAssetPath: "/mediapipe/face_landmarker.task",
-			delegate: "GPU",
-		},
-		runningMode: "VIDEO",
-		numFaces: 1,
-		outputFaceBlendshapes: true,
-		outputFacialTransformationMatrixes: true,
-	});
-}
+// Inference happens in a worker so detectForVideo can never stall the render
+// thread; the camera frames are transferred to it as a stream. On init failure the
+// worker is dropped and the camera released so the webcam light turns off.
+async function startDetectionWorker(track: MediaStreamTrack, config: Config): Promise<Worker> {
+	const worker = new Worker(new URL("./face-worker.ts", import.meta.url), { type: "module" });
+	const processor = new MediaStreamTrackProcessor({ track });
+	const init: FaceWorkerInit = { readable: processor.readable, detectFps: config.detectFps };
+	worker.postMessage(init, [init.readable]);
 
-// Runs inference at most config.detectFps/sec (the dominant cost), independent of
-// the render loop, writing into `target`.
-function startDetectionLoop(
-	video: HTMLVideoElement,
-	landmarker: FaceLandmarker,
-	target: Rig,
-	config: Config,
-	calibration: HeadCalibration,
-): void {
-	const minInterval = 1000 / config.detectFps;
-	let lastDetect = 0;
-	let lastVideoTime = -1;
-
-	const detect = (now: number) => {
-		requestAnimationFrame(detect);
-		if (now - lastDetect < minInterval || video.currentTime === lastVideoTime) return;
-		lastDetect = now;
-		lastVideoTime = video.currentTime;
-
-		const res = landmarker.detectForVideo(video, now);
-		if (res.faceBlendshapes?.length) mapResult(res, target, config, calibration);
-	};
-	requestAnimationFrame(detect);
+	try {
+		await new Promise<void>((resolve, reject) => {
+			worker.addEventListener(
+				"message",
+				(e: MessageEvent<FaceWorkerMessage>) => {
+					if (e.data.type === "ready") resolve();
+					else reject(new Error(e.data.type === "error" ? e.data.message : "unexpected worker message"));
+				},
+				{ once: true },
+			);
+			worker.addEventListener("error", (e) => reject(new Error(e.message)));
+		});
+	} catch (err) {
+		worker.terminate();
+		track.stop();
+		throw err;
+	}
+	return worker;
 }
 
 // Smooths `rig` toward `target` and writes parameters. Face params go on
@@ -202,16 +178,15 @@ function driveModel(
 	});
 }
 
-function mapResult(res: any, out: Rig, config: Config, cal: HeadCalibration): void {
-	for (const c of res.faceBlendshapes[0].categories) blendshapes[c.categoryName] = c.score;
-	const v = blendshape;
+function mapResult(res: FaceResult, out: Rig, config: Config, cal: HeadCalibration): void {
+	const v = (name: string) => res.blend[name] ?? 0;
 
 	const { mirror, headGain, headClampDeg: lim, eyes: ec, jaw: jc } = config;
 	const ms = mirror ? -1 : 1;
 
 	// Head pose from the 4x4 facial transformation matrix (column-major), made
 	// relative to the captured neutral reference.
-	const m: number[] | undefined = res.facialTransformationMatrixes?.[0]?.data;
+	const m = res.matrix;
 	if (m) {
 		const r = (row: number, col: number) => m[col * 4 + row];
 		const deg = 180 / Math.PI;
