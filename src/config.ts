@@ -30,6 +30,11 @@ export interface Config {
 	lockHotkey: string;
 	recenterHotkey: string;
 
+	// Linux/Hyprland only: when true, the app runs `hyprctl keyword bind` at startup to
+	// bind recenterHotkey to the portal global shortcut (and unbinds on quit), so no
+	// hyprland.conf edit is needed. No-op off Linux, or if hyprctl isn't a Hyprland session.
+	hyprlandAutoBind: boolean;
+
 	showFps: boolean;
 	showExpressions: boolean;
 }
@@ -58,6 +63,7 @@ export const DEFAULT_CONFIG: Config = {
 	camera: { width: 1080, height: 960 },
 	lockHotkey: "CommandOrControl+Alt+L",
 	recenterHotkey: "CommandOrControl+Alt+R",
+	hyprlandAutoBind: false,
 	showFps: true,
 	showExpressions: true,
 };

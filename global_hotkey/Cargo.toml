@@ -6,13 +6,12 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib"]
 
-[[bin]]
-path = "src/test.rs"
-name = "test"
-
 [dependencies]
 napi = { version = "3.10.0", features = ["napi4"] }
 napi-derive = "3.5.8"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+futures-util = "0.3"
 
 [build-dependencies]
 napi-build = "2.3.2"

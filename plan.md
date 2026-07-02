@@ -108,6 +108,62 @@ reload) rather than live re-apply.
 
 ## Backlog (later platforms)
 
+### 3.1 Hyprland
+
+  those are the thing we have to set:
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:no_focus true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:border_size 0'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:no_blur true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:no_blur true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:pin true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:opacity 1.0 override 1.0 override 1.0 override'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:no_dim true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:no_shadow true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:float true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:no_follow_mouse true'
+  ok
+
+  ╭╴  terry at ~
+  ╰─󰍟 hyprctl keyword 'windowrule[web2d]:suppress_event fullscreen maximize fullscreenoutput'
+  ok
+  this is the crate we are going to use:
+  <https://crates.io/crates/hyprland>
+  we are going to make another crate in the project dir called overlay_rs and link with napi
+  this is the dispatch we are going to use:
+  <https://docs.rs/hyprland/0.3.13/hyprland/dispatch/enum.DispatchType.html#variant.MoveWindowPixel>
+  <https://docs.rs/hyprland/0.3.13/hyprland/dispatch/t.ResizeWindowPixel>
+  get monitor size via this
+  <https://docs.rs/hyprland/0.3.13/hyprland/data/inde>
+  there is a Monitors::get, and get our window info via this Clients::get
+
 ### 3.5 Fix tray checkmark icon refresh on hyprland
 
 ### 3.6 For Linux add a option to add a inside boarder around the window so user can disable boarders on the window

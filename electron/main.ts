@@ -9,6 +9,9 @@ import {
 	Tray,
 } from "electron";
 import { join, sep } from "node:path";
+import { homedir } from "node:os";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
 import { applyMacOverlay } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
@@ -17,6 +20,7 @@ import { createLogger, color } from "./log";
 import {
 	loadConfig,
 	loadHotkeysSync,
+	loadHyprlandAutoBindSync,
 	loadUiTogglesSync,
 	loadWindowBoundsSync,
 	savePosSync,
@@ -116,8 +120,18 @@ ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 );
 ipcMain.handle("config:get-hotkey", (_e, id: HotkeyId) => (id in hotkeys ? hotkeys[id] : ""));
 ipcMain.handle("config:set-hotkey", async (_e, id: HotkeyId, accelerator: string) => {
+	if (typeof accelerator !== "string" || !(id in hotkeys)) return false;
 	if (id === "lock" && IS_LINUX) return false; // lock system disabled on Linux
-	if (typeof accelerator !== "string" || !(id in hotkeys) || !applyHotkey(id, accelerator)) return false;
+	if (IS_LINUX) {
+		// The portal shortcut id is bound once at startup; the accelerator is only an
+		// advisory preferredTrigger there. But when hyprlandAutoBind is on we drive the
+		// real key via hyprctl, so a change can take effect live.
+		hotkeys[id] = accelerator;
+		await setHotkey(id, accelerator);
+		if (id === "recenter" && loadHyprlandAutoBindSync()) applyHyprlandBind(accelerator);
+		return true;
+	}
+	if (!applyHotkey(id, accelerator)) return false;
 	await setHotkey(id, accelerator);
 	return true;
 });
@@ -139,8 +153,9 @@ function persistBounds(b: WindowBounds): void {
 }
 
 // The renderer's move/resize guide drives the OS window through these. Off on Linux —
-// a Wayland client can't self-position, so setBounds(x,y) is a no-op and the guide is
-// disabled renderer-side too. macOS and Windows keep it.
+// the renderer guide is disabled there (Wayland can't self-position); the window is
+// created `resizable` instead and native resizes persist via the `resize` listener in
+// createWindow. macOS and Windows keep the guide.
 function registerWindowIpc(): void {
 	if (IS_LINUX) return;
 	ipcMain.handle("window:get-bounds", (): WindowBounds | null => {
@@ -232,6 +247,181 @@ function applyHotkey(id: HotkeyId, accelerator: string): boolean {
 	return true;
 }
 
+// Linux global hotkeys go through the XDG GlobalShortcuts portal (Electron's
+// globalShortcut can't: it never declares an app id to the portal, so the compositor
+// rejects its session). We drive the portal from the `global_hotkey` native module,
+// which registers shortcut *ids*; the user binds real keys in the compositor config
+// (e.g. hyprland.conf: `bind = CTRL ALT, R, global, web2d:recenter`). The config
+// accelerator is only an advisory `preferredTrigger` — compositors like Hyprland ignore
+// it. Lock stays disabled on Linux, so only `recenter` is registered.
+const PORTAL_APP_ID = "web2d";
+
+interface GlobalHotkeyModule {
+	start(
+		appId: string,
+		shortcuts: { id: string; description: string; preferredTrigger: string }[],
+		onActivated: (err: Error | null, id: string) => void,
+	): void;
+}
+
+// The host portal registry only accepts an app id that resolves to a loadable .desktop
+// whose Exec points at a real binary. process.execPath is always absolute + resolvable
+// (the portal never execs it — Exec is used purely for app-id validation).
+function ensureDesktopEntry(): void {
+	const dir = join(homedir(), ".local", "share", "applications");
+	const file = join(dir, `${PORTAL_APP_ID}.desktop`);
+	if (existsSync(file)) return;
+	try {
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(file, `[Desktop Entry]\nType=Application\nName=web2d\nExec=${process.execPath}\n`);
+		log.info(`wrote portal .desktop ${color.gray(file)}`);
+	} catch (e) {
+		log.warn("could not write .desktop for portal registration:", e);
+	}
+}
+
+// Electron accelerator → portal trigger string ("CommandOrControl+Alt+R" → "CTRL+ALT+r").
+// Advisory only (Hyprland ignores it), so best-effort is fine.
+function toPortalTrigger(accelerator: string): string {
+	if (!accelerator) return "";
+	const parts = accelerator.split("+");
+	const key = (parts.pop() ?? "").toLowerCase();
+	const mods = parts.map((m) => {
+		switch (m.toLowerCase()) {
+			case "commandorcontrol":
+			case "cmdorctrl":
+			case "control":
+			case "ctrl":
+			case "command":
+			case "cmd":
+				return "CTRL";
+			case "alt":
+			case "option":
+				return "ALT";
+			case "shift":
+				return "SHIFT";
+			case "super":
+			case "meta":
+				return "SUPER";
+			default:
+				return m.toUpperCase();
+		}
+	});
+	return [...mods, key].join("+");
+}
+
+function startLinuxGlobalShortcuts(): void {
+	log.info(`linux global shortcuts: starting (recenter accelerator = ${color.cyan(hotkeys.recenter || "(unbound)")})`);
+	let gh: GlobalHotkeyModule;
+	try {
+		gh = require("@web2d/global-hotkey") as GlobalHotkeyModule;
+		log.debug("global-hotkey native module loaded");
+	} catch (e) {
+		log.warn("global-hotkey native module unavailable; Linux hotkeys disabled:", e);
+		return;
+	}
+	ensureDesktopEntry();
+	const preferredTrigger = toPortalTrigger(hotkeys.recenter);
+	log.info(`registering portal shortcut ${color.gray(`app=${PORTAL_APP_ID} id=recenter preferredTrigger=${preferredTrigger || "(none)"}`)}`);
+	try {
+		gh.start(
+			PORTAL_APP_ID,
+			[{ id: "recenter", description: "Recenter face tracking", preferredTrigger }],
+			(err, id) => {
+				if (err) return log.warn("global-hotkey activation error:", err);
+				log.info(`global shortcut activated: ${color.cyan(id)}`);
+				const shortcutId = id.includes(":") ? (id.split(":").pop() as string) : id;
+				const action = HOTKEY_ACTION[shortcutId as HotkeyId];
+				if (action) {
+					log.debug(`running action for "${shortcutId}"`);
+					action();
+				} else {
+					log.warn(`activated shortcut "${id}" has no action (parsed id "${shortcutId}")`);
+				}
+			},
+		);
+		log.ok(`portal global shortcuts registered ${color.gray(`(${PORTAL_APP_ID}:recenter)`)}`);
+	} catch (e) {
+		log.warn("portal global-shortcut registration failed:", e);
+		return;
+	}
+
+	const autoBind = loadHyprlandAutoBindSync();
+	log.info(`hyprlandAutoBind = ${autoBind ? color.green("true") : color.gray("false")}`);
+	if (autoBind) {
+		applyHyprlandBind(hotkeys.recenter);
+	} else {
+		log.info(
+			color.gray(
+				`bind the shortcut in hyprland.conf (bind = <mods>, <key>, global, ${PORTAL_APP_ID}:recenter) or set hyprlandAutoBind = true`,
+			),
+		);
+	}
+}
+
+// hyprctl only ignores duplicate binds by stacking them, so we unbind before binding;
+// the same combo is unbound on quit. The registered portal shortcut itself lingers in
+// `hyprctl globalshortcuts` (XDPH keeps it for the compositor's lifetime) but dedupes.
+let hyprlandBoundCombo: string | null = null;
+
+function applyHyprlandBind(accelerator: string): void {
+	const combo = toHyprlandCombo(accelerator);
+	if (!combo) {
+		log.warn(`hyprland auto-bind: could not derive a bind combo from "${accelerator}"`);
+		return;
+	}
+	const target = `${PORTAL_APP_ID}:recenter`;
+	const previous = hyprlandBoundCombo;
+	const hyprctl = (args: string[], done?: () => void) => {
+		log.debug(`hyprctl ${args.join(" ")}`);
+		execFile("hyprctl", args, (err, stdout, stderr) => {
+			const out = `${stdout ?? ""}${stderr ?? ""}`.trim();
+			if (err) log.warn(`hyprctl ${args.join(" ")} failed (not a Hyprland session?): ${err.message}${out ? ` — ${out}` : ""}`);
+			else log.debug(`hyprctl ${args.join(" ")} → ${out || "ok"}`);
+			done?.();
+		});
+	};
+	// Drop the old combo (accelerator changed) and any stale/duplicate of the new one
+	// before binding, so hyprctl doesn't stack duplicate binds.
+	if (previous && previous !== combo) hyprctl(["keyword", "unbind", previous]);
+	hyprctl(["keyword", "unbind", combo], () => {
+		hyprctl(["keyword", "bind", `${combo}, global, ${target}`], () => {
+			log.ok(`hyprland auto-bind ${color.cyan(`${combo} → ${target}`)}`);
+		});
+	});
+	hyprlandBoundCombo = combo;
+}
+
+// Electron accelerator → hyprctl bind combo ("CommandOrControl+Alt+R" → "CTRL ALT, R").
+function toHyprlandCombo(accelerator: string): string | null {
+	if (!accelerator) return null;
+	const parts = accelerator.split("+");
+	const key = parts.pop();
+	if (!key) return null;
+	const mods = parts.map((m) => {
+		switch (m.toLowerCase()) {
+			case "commandorcontrol":
+			case "cmdorctrl":
+			case "control":
+			case "ctrl":
+			case "command":
+			case "cmd":
+				return "CTRL";
+			case "alt":
+			case "option":
+				return "ALT";
+			case "shift":
+				return "SHIFT";
+			case "super":
+			case "meta":
+				return "SUPER";
+			default:
+				return m.toUpperCase();
+		}
+	});
+	return `${mods.join(" ")}, ${key.toUpperCase()}`;
+}
+
 // UI toggles (FPS counter, expression list): persisted in config.toml and pushed to
 // the renderer to show/hide live. Seeded from config at boot (loadUiTogglesSync).
 const uiToggles: Record<UiToggle, boolean> = {
@@ -285,7 +475,9 @@ function createWindow(): void {
 		closable: false,
 		minimizable: false,
 		maximizable: false,
-		resizable: false,
+		// Linux needs a resizable window for the guide's setBounds to change its size;
+		// macOS keeps it false so AeroSpace's AX heuristic ignores the overlay.
+		resizable: IS_LINUX,
 		fullscreenable: false,
 		focusable: false, // never steal focus from the app underneath
 		skipTaskbar: true,
@@ -305,6 +497,10 @@ function createWindow(): void {
 	applyMacOverlay(win);
 	win.on("show", () => applyMacOverlay(win));
 	win.on("blur", () => applyMacOverlay(win));
+
+	// Linux has no renderer guide; the window is natively resizable, so persist the
+	// geometry the compositor gives us (debounced) to survive restart.
+	if (IS_LINUX) win.on("resize", () => persistBounds(win.getBounds()));
 
 	win.once("ready-to-show", () => {
 		win.showInactive(); // show without taking focus
@@ -402,10 +598,14 @@ app.whenReady().then(() => {
 	createWindow();
 
 	const saved = loadHotkeysSync();
-	for (const id of Object.keys(hotkeys) as HotkeyId[]) {
-		if (id === "lock" && IS_LINUX) continue; // lock system disabled on Linux
-		if (!applyHotkey(id, saved[id])) {
-			log.error(`could not register ${id} hotkey "${saved[id]}" — in use by another app?`);
+	if (IS_LINUX) {
+		Object.assign(hotkeys, saved); // reflect saved accelerators (config:get-hotkey, preferredTrigger)
+		startLinuxGlobalShortcuts();
+	} else {
+		for (const id of Object.keys(hotkeys) as HotkeyId[]) {
+			if (!applyHotkey(id, saved[id])) {
+				log.error(`could not register ${id} hotkey "${saved[id]}" — in use by another app?`);
+			}
 		}
 	}
 
@@ -421,6 +621,15 @@ app.on("will-quit", () => {
 		savePosSync(lastReportedPos);
 	}
 	globalShortcut.unregisterAll();
+	if (hyprlandBoundCombo) {
+		// Best-effort; sync so it lands before exit (won't run on SIGKILL — the next
+		// launch's unbind-before-bind cleans up a leftover either way).
+		try {
+			execFileSync("hyprctl", ["keyword", "unbind", hyprlandBoundCombo], { timeout: 1000 });
+		} catch {
+			// hyprctl missing or already gone; nothing to clean up
+		}
+	}
 	tray?.destroy(); // release the menubar icon so it can't linger as a ghost
 	tray = null;
 	log.info("quit");

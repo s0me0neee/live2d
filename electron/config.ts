@@ -91,6 +91,18 @@ export async function setHotkey(id: HotkeyId, accelerator: string): Promise<void
 	await writeToml(configFile, root);
 }
 
+// Read synchronously so the Linux global-shortcut setup runs in the launch tick.
+export function loadHyprlandAutoBindSync(): boolean {
+	try {
+		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		return typeof root.hyprlandAutoBind === "boolean"
+			? root.hyprlandAutoBind
+			: DEFAULT_CONFIG.hyprlandAutoBind;
+	} catch {
+		return DEFAULT_CONFIG.hyprlandAutoBind;
+	}
+}
+
 export type UiToggle = "showFps" | "showExpressions";
 
 // Read synchronously so the tray's initial checkbox state is ready in the launch tick.

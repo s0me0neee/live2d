@@ -1,3 +1,1 @@
-import "@web2d/global-hotkey"
-
-
+//import * as hk from "@web2d/global-hotkey"
