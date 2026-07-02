@@ -1,16 +1,17 @@
-model = "zero"
+model = "zero-linux"
 mirror = true
 smoothing = 0.6
 headGain = 1.1
 headClampDeg = 90
 bodyFollow = 0.4
 breath = 0.4
-renderFps = 80
-detectFps = 45
-lockHotkey = "Command+Shift+Z"
-showFps = false
+renderFps = 120
+detectFps = 50
+lockHotkey = "CommandOrControl+Shift+Z"
+showFps = true
 showExpressions = false
-recenterHotkey = "Command+Shift+R"
+hyprlandAutoBind = true
+recenterHotkey = "CommandOrControl+Shift+R"
 
 [physics]
 windEnabled = false
@@ -30,7 +31,7 @@ gazeGain = 1.1
 
 [jaw]
 deadzone = 0.0045
-curve = 0.2
+curve = 0.18
 gain = 1
 
 [camera]
@@ -38,7 +39,7 @@ width = 720
 height = 405
 
 [window]
-x = 1018
-y = 430
-width = 690
-height = 677
+x = 0
+y = 0
+width = 999
+height = 948
