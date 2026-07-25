@@ -51,11 +51,6 @@ file = "twintail_R_hide.exp3.json"
 key = "0"
 active = false
 
-[pos]
-x = 340.6372062536444
-y = 625.4032119393921
-scale = 0.2703602364975087
-
 [gain]
 z = 1
 x = 1

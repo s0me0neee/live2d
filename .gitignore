@@ -13,6 +13,10 @@ dist-electron
 dist-ssr
 *.local
 
+# Per-machine volatile state: window geometry + live model transform (electron/config.ts).
+# The rest of config/web2d (model tomls, tuning) stays tracked.
+config/web2d/local.toml
+
 
 # Editor directories and files
 .vscode/*

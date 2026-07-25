@@ -37,9 +37,3 @@ gain = 1
 [camera]
 width = 720
 height = 405
-
-[window]
-x = 3829
-y = 688
-width = 1005
-height = 883

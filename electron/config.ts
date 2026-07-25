@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { app } from "electron";
@@ -24,6 +24,24 @@ const appConfigDir = app.isPackaged
 	: resolve(process.cwd(), "config", "web2d");
 const configFile = join(appConfigDir, "config.toml");
 const modelsDir = join(appConfigDir, "models");
+// Volatile per-machine state (window geometry + live model transform). Kept out of the
+// tracked config/model TOMLs — gitignored — so it doesn't churn git or carry another
+// machine's absolute geometry.
+const localStateFile = join(appConfigDir, "local.toml");
+
+function readLocalStateSync(): Record<string, unknown> {
+	try {
+		const parsed = parse(readFileSync(localStateFile, "utf8"));
+		return isObject(parsed) ? parsed : {};
+	} catch {
+		return {};
+	}
+}
+
+function writeLocalStateSync(state: Record<string, unknown>): void {
+	mkdirSync(appConfigDir, { recursive: true });
+	writeFileSync(localStateFile, stringify(state));
+}
 
 const EXP_SUFFIX = ".exp3.json";
 const EXPRESSION_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
@@ -37,8 +55,9 @@ export async function loadConfig(): Promise<ResolvedConfig> {
 
 	const root = await readToml(configFile);
 	const modelName = typeof root.model === "string" ? root.model : "ariu";
+	delete root.window; // migrated to local.toml; drop any stale copy from an old config
 	const config = mergeDefaults(DEFAULT_CONFIG, root);
-	// Spread `root` first so non-Config keys (e.g. [window]) survive the rewrite.
+	// Spread `root` first so any unrecognized keys survive the rewrite.
 	await writeToml(configFile, { ...root, model: modelName, ...config });
 
 	activeModelName = modelName;
@@ -49,27 +68,21 @@ export async function loadConfig(): Promise<ResolvedConfig> {
 // Synchronous so the window can be created in the same launch tick (an async
 // gap before createWindow lets the AeroSpace WM capture the overlay on macOS).
 export function loadWindowBoundsSync(): WindowBounds | null {
-	try {
-		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
-		return parseBounds(root.window);
-	} catch {
-		return null;
-	}
+	return parseBounds(readLocalStateSync().window);
 }
 
+// Async only to match its debounced caller; local.toml is tiny, so the write is sync.
 export async function saveWindowBounds(bounds: WindowBounds): Promise<void> {
-	const root = await readToml(configFile);
-	root.window = bounds;
-	await writeToml(configFile, root);
+	saveWindowBoundsSync(bounds);
 }
 
-// Synchronous variant for the quit path (will-quit can't await; on Linux the final
-// geometry is read from the compositor there).
+// The quit path (will-quit) can't await; on Linux the final geometry is read from the
+// compositor there.
 export function saveWindowBoundsSync(bounds: WindowBounds): void {
 	try {
-		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
-		root.window = bounds;
-		writeFileSync(configFile, stringify(root));
+		const state = readLocalStateSync();
+		state.window = bounds;
+		writeLocalStateSync(state);
 	} catch (e) {
 		log.warn("saveWindowBoundsSync failed:", e);
 	}
@@ -135,19 +148,24 @@ export async function saveUiToggle(key: UiToggle, value: boolean): Promise<void>
 	await writeToml(configFile, root);
 }
 
-// Synchronous so it can run inside `will-quit`, where an async write wouldn't finish
-// before the process exits. [pos] is persisted only at quit (the renderer reports the
-// live transform in-memory during use) to avoid disk churn while dragging.
+// The live model transform is per-machine, so it lives in local.toml keyed by model
+// name, not the tracked model TOML. Sync so it can run inside `will-quit`; persisted
+// only at drag-stop / quit (in-memory during use) to avoid disk churn while dragging.
 export function savePosSync(pos: Pos): void {
-	const file = modelFile(activeModelName);
-	if (!existsSync(file)) return; // never create a file for an unknown model
 	try {
-		const raw = parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-		raw.pos = pos;
-		writeFileSync(file, stringify(raw));
+		const state = readLocalStateSync();
+		const positions = isObject(state.pos) ? state.pos : {};
+		positions[activeModelName] = pos;
+		state.pos = positions;
+		writeLocalStateSync(state);
 	} catch (e) {
 		log.warn("savePosSync failed:", e);
 	}
+}
+
+function loadPosSync(name: string): Pos | undefined {
+	const positions = readLocalStateSync().pos;
+	return isObject(positions) ? parsePos(positions[name]) : undefined;
 }
 
 export async function setExpressionActive(name: string, active: boolean): Promise<void> {
@@ -181,7 +199,7 @@ async function loadModel(name: string): Promise<ModelConfig> {
 		expressions: await discoverExpressions(location, savedExpressions),
 	};
 	if (location) model.resolvedLocation = resolveModelDir(location);
-	const pos = parsePos(raw.pos);
+	const pos = loadPosSync(name);
 	if (pos) model.pos = pos;
 
 	const loadable = isModelLoadable(model);
@@ -194,6 +212,7 @@ async function loadModel(name: string): Promise<ModelConfig> {
 	const changed =
 		keysChanged(savedGain, model.gain) || keysChanged(savedExpressions, model.expressions);
 	if (existed && loadable && changed) {
+		delete raw.pos; // migrated to local.toml; strip any stale copy from an old model TOML
 		raw.gain = toGainToml(model.gain);
 		raw.expressions = model.expressions;
 		await writeToml(file, raw);
@@ -203,7 +222,7 @@ async function loadModel(name: string): Promise<ModelConfig> {
 
 // Resolve the model's .model3.json → its .physics3.json and parse it once, shared
 // by the gain and routing discovery below. null when there's no physics file.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// `any`: physics3.json is free-form vendor JSON we probe defensively below.
 async function loadPhysics(location: string, modelJson: string): Promise<any | null> {
 	const dir = resolveModelDir(location);
 	const physicsFile = (await readJson(join(dir, modelJson)))?.FileReferences?.Physics;
@@ -213,7 +232,6 @@ async function loadPhysics(location: string, modelJson: string): Promise<any | n
 
 // Group each physics setting's output params by the setting's human name. Each
 // group keeps the user's saved multiplier (default 1 = no change).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function discoverGain(physics: any, saved: Record<string, number>): Record<string, GainSetting> {
 	if (!physics) return {};
 
@@ -253,7 +271,6 @@ const toGainToml = (gain: Record<string, GainSetting>): Record<string, number> =
 //   - physicsBodyParams: ParamBodyAngle* the physics already derives from the head
 //     pose. We must NOT override those (their polarity/amount is the rigger's), or
 //     the body fights physics and can swing the wrong way.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function discoverPhysicsRouting(physics: any): {
 	headAngle: ModelConfig["headAngle"];
 	physicsBodyParams: string[];
@@ -376,7 +393,6 @@ async function writeToml(file: string, data: Record<string, unknown>): Promise<v
 	await writeFile(file, stringify(data));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function readJson(file: string): Promise<any> {
 	try {
 		return JSON.parse(await readFile(file, "utf8"));
