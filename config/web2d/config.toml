@@ -1,4 +1,4 @@
-model = "zero-linux"
+model = "jk_black_cat_linux"
 mirror = true
 smoothing = 0.6
 headGain = 1.1
@@ -8,7 +8,7 @@ breath = 0.4
 renderFps = 120
 detectFps = 50
 lockHotkey = "CommandOrControl+Shift+Z"
-showFps = true
+showFps = false
 showExpressions = false
 hyprlandAutoBind = true
 recenterHotkey = "CommandOrControl+Shift+R"
