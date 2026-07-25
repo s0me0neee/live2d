@@ -23,12 +23,20 @@ export async function setupExpressions(
 	visible: boolean,
 ): Promise<void> {
 	const base = modelConfig.resolvedLocation || modelConfig.location;
-	const defs: LoadedExpression[] = await Promise.all(
+	// Load each file independently so one missing/corrupt .exp3.json drops only that
+	// expression instead of rejecting the whole set and disabling the panel.
+	const loaded = await Promise.all(
 		Object.entries(modelConfig.expressions).map(async ([name, e]) => {
-			const data = await fetch(modelAssetUrl(base, e.file)).then((r) => r.json());
-			return { name, key: e.key, params: (data.Parameters ?? []) as ExpParam[] };
+			try {
+				const data = await fetch(modelAssetUrl(base, e.file)).then((r) => r.json());
+				return { name, key: e.key, params: (data.Parameters ?? []) as ExpParam[] };
+			} catch (err) {
+				console.warn(`[expr] skipping "${name}" (${e.file}):`, err);
+				return null;
+			}
 		}),
 	);
+	const defs: LoadedExpression[] = loaded.filter((d): d is LoadedExpression => d !== null);
 
 	const cm = (model.internalModel as any).coreModel;
 

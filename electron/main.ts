@@ -188,7 +188,7 @@ function setOverlayLock(win: BrowserWindow, locked: boolean): void {
 	// forward:true still delivers mousemove (for hover) while clicks pass through — but
 	// it's macOS/Windows-only, so hover reactions while locked are lost on Linux/Wayland.
 	win.setIgnoreMouseEvents(locked, { forward: true });
-	if (IS_LINUX) applyHyprlandLock(locked); // toggle the pin/float/no-focus overlay rules
+	if (IS_LINUX) applyHyprlandLock(locked); // toggle the no-focus/border/blur overlay rules
 	win.webContents.send("overlay:lock-changed", locked);
 	refreshTrayMenu();
 	log.info(`overlay ${locked ? color.yellow("locked (click-through)") : color.green("unlocked (clickable)")}`);

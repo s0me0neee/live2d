@@ -59,20 +59,26 @@ async function run({ readable, detectFps }: FaceWorkerInit): Promise<void> {
 	const minInterval = 1000 / detectFps;
 	let lastDetect = 0;
 	const reader = readable.getReader();
-	for (;;) {
-		const { value: frame, done } = await reader.read();
-		if (done) return;
-		const now = performance.now();
-		if (now - lastDetect < minInterval) {
-			frame.close();
-			continue;
+	try {
+		for (;;) {
+			const { value: frame, done } = await reader.read();
+			if (done) return;
+			// Every VideoFrame must be closed (even on a detect throw or a drop) or the
+			// capture pipeline stalls holding buffers it can't recycle.
+			try {
+				const now = performance.now();
+				if (now - lastDetect < minInterval) continue; // arrived faster than detectFps
+				lastDetect = now;
+				const res = landmarker.detectForVideo(frame, now);
+				if (!res.faceBlendshapes?.length) continue;
+				const blend: Record<string, number> = {};
+				for (const c of res.faceBlendshapes[0].categories) blend[c.categoryName] = c.score;
+				post({ type: "result", blend, matrix: res.facialTransformationMatrixes?.[0]?.data ?? null });
+			} finally {
+				frame.close();
+			}
 		}
-		lastDetect = now;
-		const res = landmarker.detectForVideo(frame, now);
-		frame.close();
-		if (!res.faceBlendshapes?.length) continue;
-		const blend: Record<string, number> = {};
-		for (const c of res.faceBlendshapes[0].categories) blend[c.categoryName] = c.score;
-		post({ type: "result", blend, matrix: res.facialTransformationMatrixes?.[0]?.data ?? null });
+	} finally {
+		reader.releaseLock();
 	}
 }

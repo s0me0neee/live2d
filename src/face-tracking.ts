@@ -55,6 +55,13 @@ export async function startFaceTracking(
 	worker.onmessage = (e: MessageEvent<FaceWorkerMessage>) => {
 		if (e.data.type === "result") mapResult(e.data, target, config, calibration);
 	};
+	// A worker crash after init would otherwise be silent — the model just freezes at
+	// its last pose. Surface it and release the camera so the webcam light turns off.
+	worker.onerror = (e) => {
+		console.warn("[face] worker crashed, tracking stopped:", e.message);
+		worker.terminate();
+		track.stop();
+	};
 	driveModel(model, rig, target, config, modelConfig);
 }
 
@@ -67,11 +74,27 @@ interface HeadCalibration {
 }
 
 async function openCamera(config: Config): Promise<MediaStreamTrack> {
-	const stream = await navigator.mediaDevices.getUserMedia({
-		video: { ...config.camera, facingMode: "user" },
-		audio: false,
-	});
-	return stream.getVideoTracks()[0];
+	try {
+		const stream = await navigator.mediaDevices.getUserMedia({
+			video: { ...config.camera, facingMode: "user" },
+			audio: false,
+		});
+		return stream.getVideoTracks()[0];
+	} catch (err) {
+		// A raw DOMException logs as "[object DOMException]", which says nothing about
+		// whether the camera was denied, missing or busy.
+		throw new Error(`camera unavailable — ${await describeCameraFailure(err)}`);
+	}
+}
+
+async function describeCameraFailure(err: unknown): Promise<string> {
+	const name = err instanceof DOMException ? err.name : "Error";
+	const message = err instanceof Error ? err.message : String(err);
+	const cams = await navigator.mediaDevices
+		.enumerateDevices()
+		.then((ds) => ds.filter((d) => d.kind === "videoinput").length)
+		.catch(() => -1);
+	return `${name}: ${message} (${cams < 0 ? "device list unavailable" : `${cams} video input(s) detected`})`;
 }
 
 // Inference happens in a worker so detectForVideo can never stall the render
