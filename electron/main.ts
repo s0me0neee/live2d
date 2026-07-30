@@ -15,6 +15,8 @@ import { applyMacOverlay } from "./mac-overlay";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
 import { openSettings } from "./settings-window";
+import { openFaceDebug, sendFaceDebugData } from "./face-debug-window";
+import type { FaceResult } from "../src/face-worker";
 import { createLogger, color } from "./log";
 import {
 	loadConfig,
@@ -115,6 +117,8 @@ ipcMain.on("pos:report", (_e, pos: Pos) => {
 		savePosSync(pos);
 	}, 400);
 });
+// Fire-and-forget relay from the overlay renderer to the face-debug window (if open).
+ipcMain.on("face-debug:data", (_e, result: FaceResult) => sendFaceDebugData(result));
 ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 	setExpressionActive(name, Boolean(active)),
 );
@@ -756,6 +760,7 @@ function createTray(): void {
 			},
 			{ type: "separator" },
 			{ label: "Settings…", click: openSettings },
+			{ label: "Face tracking debug…", click: openFaceDebug },
 			{ label: "Quit", role: "quit" },
 		]);
 		tray?.setContextMenu(menu);

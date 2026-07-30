@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { HotkeyId, Pos, ResolvedConfig } from "../src/config";
+import type { FaceResult } from "../src/face-worker";
 
 export interface Bounds {
 	x: number;
@@ -50,6 +51,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			const listener = () => cb();
 			ipcRenderer.on("face:recenter", listener);
 			return () => ipcRenderer.removeListener("face:recenter", listener);
+		},
+	},
+
+	// Relays each detection result to the face-debug window (electron/face-debug-window.ts)
+	// when it's open; main.ts no-ops the relay otherwise, so send() is always cheap to call.
+	faceDebug: {
+		send: (result: FaceResult): void => ipcRenderer.send("face-debug:data", result),
+		onData: (cb: (result: FaceResult) => void): (() => void) => {
+			const listener = (_e: unknown, result: FaceResult) => cb(result);
+			ipcRenderer.on("face-debug:data", listener);
+			return () => ipcRenderer.removeListener("face-debug:data", listener);
 		},
 	},
 

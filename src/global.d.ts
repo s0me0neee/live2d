@@ -1,6 +1,7 @@
 import type * as PIXI from "pixi.js";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { HotkeyId, Pos, ResolvedConfig } from "./config";
+import type { FaceResult } from "./face-worker";
 
 declare global {
 	interface Window {
@@ -28,6 +29,10 @@ declare global {
 			};
 			faceTracking: {
 				onRecenter(cb: () => void): () => void;
+			};
+			faceDebug: {
+				send(result: FaceResult): void;
+				onData(cb: (result: FaceResult) => void): () => void;
 			};
 			hotkey: {
 				get(id: HotkeyId): Promise<string>;

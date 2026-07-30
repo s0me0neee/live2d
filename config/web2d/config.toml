@@ -30,9 +30,10 @@ gain = 1
 gazeGain = 1.1
 
 [jaw]
-deadzone = 0.0045
-curve = 0.18
-gain = 1
+deadzone = 0.02
+openMax = 0.85
+curve = 1
+gain = 1.1
 
 [camera]
 width = 720

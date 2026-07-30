@@ -1,6 +1,7 @@
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { Config, ModelConfig } from "./config";
 import type { FaceResult, FaceWorkerInit, FaceWorkerMessage } from "./face-worker";
+import { eyeOffsets, mouthOpenRatio, type EyeOffset } from "./face-geometry";
 
 // The Live2D parameters we drive from the webcam (with their value ranges).
 interface Rig {
@@ -47,13 +48,18 @@ export async function startFaceTracking(
 	// the model faces forward at the user's natural pose. The tray "recenter"
 	// option re-captures it.
 	const calibration: HeadCalibration = { yaw: 0, pitch: 0, roll: 0, captured: false, recenter: false };
+	const gazeCalibration: GazeCalibration = { baseline: null, recenter: false };
 	window.electronAPI?.faceTracking?.onRecenter(() => {
 		console.info("[face] recenter requested — recapturing neutral head pose");
 		calibration.recenter = true;
+		gazeCalibration.recenter = true;
 	});
 
 	worker.onmessage = (e: MessageEvent<FaceWorkerMessage>) => {
-		if (e.data.type === "result") mapResult(e.data, target, config, calibration);
+		if (e.data.type !== "result") return;
+		mapResult(e.data, target, config, calibration, gazeCalibration);
+		// No-op unless the face-debug window is open (electron/face-debug-window.ts).
+		window.electronAPI?.faceDebug?.send(e.data);
 	};
 	// A worker crash after init would otherwise be silent — the model just freezes at
 	// its last pose. Surface it and release the camera so the webcam light turns off.
@@ -70,6 +76,17 @@ interface HeadCalibration {
 	pitch: number;
 	roll: number;
 	captured: boolean;
+	recenter: boolean;
+}
+
+// Kept separate from HeadCalibration rather than added fields on it: that one's
+// capture is gated on res.matrix being present, this one on res.landmarks — the two
+// can be null independently per frame, so a shared `recenter` flag risks one guard
+// consuming it on a frame where the other's required input is missing, silently
+// skipping that calibration's recapture. `baseline: null` doubles as "uncaptured"
+// (unlike yaw/pitch/roll, 0 isn't a valid captured gaze baseline).
+interface GazeCalibration {
+	baseline: [EyeOffset, EyeOffset] | null;
 	recenter: boolean;
 }
 
@@ -201,7 +218,13 @@ function driveModel(
 	});
 }
 
-function mapResult(res: FaceResult, out: Rig, config: Config, cal: HeadCalibration): void {
+function mapResult(
+	res: FaceResult,
+	out: Rig,
+	config: Config,
+	cal: HeadCalibration,
+	gazeCal: GazeCalibration,
+): void {
 	const v = (name: string) => res.blend[name] ?? 0;
 
 	const { mirror, headGain, headClampDeg: lim, eyes: ec, jaw: jc } = config;
@@ -243,18 +266,33 @@ function mapResult(res: FaceResult, out: Rig, config: Config, cal: HeadCalibrati
 	out.eyeLOpen = clamp(1 - closeAmount(blinkL), 0, 2);
 	out.eyeROpen = clamp(1 - closeAmount(blinkR), 0, 2);
 
-	const gx =
-		(v("eyeLookInLeft") + v("eyeLookOutRight")) / 2 -
-		(v("eyeLookOutLeft") + v("eyeLookInRight")) / 2;
-	const gy =
-		(v("eyeLookUpLeft") + v("eyeLookUpRight")) / 2 -
-		(v("eyeLookDownLeft") + v("eyeLookDownRight")) / 2;
-	out.eyeBallX = clamp(gx * ms * ec.gazeGain, -1, 1);
-	out.eyeBallY = clamp(gy * ec.gazeGain, -1, 1);
+	// Gaze and mouth-open come from landmark geometry, not blendshapes — jawOpen and
+	// eyeLookIn/Out/Up/Down both misread under head pitch (e.g. jawOpen falsely fires
+	// when looking down), whereas these are direct measurements off the face mesh.
+	// mouthOpenRatio specifically is defined entirely in 3D landmark space (see
+	// face-geometry.ts) so it's invariant to head rotation on all three axes, not just
+	// pitch.
+	// Guarded like the head-pose matrix above: if landmarks are missing this frame,
+	// leave these Rig fields at their previous value rather than snapping to 0.
+	if (res.landmarks) {
+		const lm = res.landmarks;
 
-	// Deadzone kills closed-mouth jitter; the concave curve lifts speech.
-	const jaw = clamp((v("jawOpen") - jc.deadzone) / (1 - jc.deadzone), 0, 1);
-	out.mouthOpen = clamp(Math.pow(jaw, jc.curve) * jc.gain, 0, 1);
+		const [left, right] = eyeOffsets(lm, mirror); // mirror already applied inside — don't also multiply by `ms`
+		if (!gazeCal.baseline || gazeCal.recenter) {
+			gazeCal.baseline = [left, right];
+			gazeCal.recenter = false;
+		}
+		const [baseL, baseR] = gazeCal.baseline;
+		const gx = (left.ox - baseL.ox + (right.ox - baseR.ox)) / 2;
+		const gy = (left.oy - baseL.oy + (right.oy - baseR.oy)) / 2;
+		out.eyeBallX = clamp(gx * ec.gazeGain, -1, 1);
+		out.eyeBallY = clamp(gy * ec.gazeGain, -1, 1);
+
+		// Deadzone kills closed-mouth jitter; curve reshapes; gain scales the result.
+		const ratio = mouthOpenRatio(lm);
+		const d = clamp((ratio - jc.deadzone) / (jc.openMax - jc.deadzone || 1), 0, 1);
+		out.mouthOpen = clamp(Math.pow(d, jc.curve) * jc.gain, 0, 1);
+	}
 	out.mouthForm = clamp((v("mouthSmileLeft") + v("mouthSmileRight")) / 2, 0, 1);
 
 	out.browLY = clamp(v("browInnerUp") - v("browDownLeft"), -1, 1);

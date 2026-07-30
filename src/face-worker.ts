@@ -1,6 +1,6 @@
 // MediaPipe inference off the render thread: main transfers the camera's
 // VideoFrame stream here; each detection posts back a compact result.
-import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver, type NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 export interface FaceWorkerInit {
 	readable: ReadableStream<VideoFrame>;
@@ -10,6 +10,10 @@ export interface FaceWorkerInit {
 export interface FaceResult {
 	blend: Record<string, number>;
 	matrix: number[] | null;
+	// Drives mouthOpenRatio/eyeOffsets in the tracking rig (face-tracking.ts) as well
+	// as the face-debug viewer — computing this is free since MediaPipe already
+	// produces it internally to derive the blendshapes.
+	landmarks: NormalizedLandmark[] | null;
 }
 
 export type FaceWorkerMessage =
@@ -51,6 +55,13 @@ async function run({ readable, detectFps }: FaceWorkerInit): Promise<void> {
 		numFaces: 1,
 		outputFaceBlendshapes: true,
 		outputFacialTransformationMatrixes: true,
+		// Defaults (0.5) drop tracking well before the face actually leaves frame —
+		// e.g. a ~20° downward tilt (a normal angle when a webcam sits above the
+		// screen) was enough to lose it. Lower thresholds trade a bit of jitter for
+		// staying locked on through moderate head angles.
+		minFaceDetectionConfidence: 0.3,
+		minFacePresenceConfidence: 0.3,
+		minTrackingConfidence: 0.3,
 	});
 	post({ type: "ready" });
 
@@ -73,7 +84,12 @@ async function run({ readable, detectFps }: FaceWorkerInit): Promise<void> {
 				if (!res.faceBlendshapes?.length) continue;
 				const blend: Record<string, number> = {};
 				for (const c of res.faceBlendshapes[0].categories) blend[c.categoryName] = c.score;
-				post({ type: "result", blend, matrix: res.facialTransformationMatrixes?.[0]?.data ?? null });
+				post({
+					type: "result",
+					blend,
+					matrix: res.facialTransformationMatrixes?.[0]?.data ?? null,
+					landmarks: res.faceLandmarks?.[0] ?? null,
+				});
 			} finally {
 				frame.close();
 			}

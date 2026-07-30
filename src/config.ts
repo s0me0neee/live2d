@@ -21,7 +21,13 @@ export interface Config {
 	};
 
 	eyes: { deadzone: number; curve: number; gain: number; gazeGain: number };
-	jaw: { deadzone: number; curve: number; gain: number };
+	// deadzone/openMax bound the raw geometric mouth-open ratio (3D distance between
+	// the inner-lip landmarks, normalized by 3D interocular distance — see
+	// face-geometry.ts) before curve/gain shaping. Values are on that ratio's own
+	// scale, live-tuned against a real face (see face-debug's "mouth" readout), not
+	// carried over from the old 0..1 jawOpen blendshape this replaced. Current values
+	// are unverified placeholders pending that live retuning.
+	jaw: { deadzone: number; openMax: number; curve: number; gain: number };
 
 	renderFps: number;
 	detectFps: number;
@@ -57,7 +63,7 @@ export const DEFAULT_CONFIG: Config = {
 		springiness: 1.02,
 	},
 	eyes: { deadzone: 0, curve: 1, gain: 1.2, gazeGain: 1 },
-	jaw: { deadzone: 0.004, curve: 0.22, gain: 1 },
+	jaw: { deadzone: 0.03, openMax: 0.35, curve: 1, gain: 1 },
 	renderFps: 120,
 	detectFps: 60,
 	camera: { width: 1080, height: 960 },

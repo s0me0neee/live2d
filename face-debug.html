@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<title>web2d face tracking debug</title>
+	<link rel="stylesheet" href="/src/face-debug/styles.css" />
+</head>
+
+<body>
+	<div class="card">
+		<header class="bar">
+			<span class="dot" id="dot"></span>
+			<span class="stat" id="stat">— FPS</span>
+			<button class="recenter" id="recenter" title="Recenter gaze baseline">Recenter</button>
+			<button class="close" id="close" title="Close" aria-label="Close">✕</button>
+		</header>
+		<div class="readout" id="readout"></div>
+		<canvas id="canvas"></canvas>
+	</div>
+	<script type="module" src="./src/face-debug/main.ts"></script>
+</body>
+
+</html>
