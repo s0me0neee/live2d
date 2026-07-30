@@ -1,48 +1,13 @@
-import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import type { Config, ModelConfig } from "./config";
+import type { Config } from "./config";
 import type { FaceResult, FaceWorkerInit, FaceWorkerMessage } from "./face-worker";
 import { eyeOffsets, mouthOpenRatio, type EyeOffset } from "./face-geometry";
-
-// The Live2D parameters we drive from the webcam (with their value ranges).
-interface Rig {
-	angleX: number; // head yaw
-	angleY: number; // head pitch
-	angleZ: number; // head roll
-	eyeLOpen: number; // 0..1
-	eyeROpen: number; // 0..1
-	eyeBallX: number; // -1..1
-	eyeBallY: number; // -1..1
-	mouthOpen: number; // 0..1
-	mouthForm: number; // 0..1 (smile)
-	browLY: number; // -1..1
-	browRY: number; // -1..1
-}
-
-const neutral = (): Rig => ({
-	angleX: 0, angleY: 0, angleZ: 0,
-	eyeLOpen: 1, eyeROpen: 1,
-	eyeBallX: 0, eyeBallY: 0,
-	mouthOpen: 0, mouthForm: 0,
-	browLY: 0, browRY: 0,
-});
-
-// Precomputed so the per-frame smoothing loop allocates nothing.
-const RIG_KEYS = Object.keys(neutral()) as (keyof Rig)[];
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+import { clamp, type Rig, type RigDriver } from "./rig";
 
 // Throws if the camera is denied/unavailable or the worker's landmarker fails to
 // initialize, so the caller can run without tracking.
-export async function startFaceTracking(
-	model: Live2DModel,
-	config: Config,
-	modelConfig: ModelConfig,
-): Promise<void> {
+export async function startFaceTracking(driver: RigDriver, config: Config): Promise<void> {
 	const track = await openCamera(config);
 	const worker = await startDetectionWorker(track, config);
-
-	const target = neutral(); // latest detection
-	const rig = neutral(); // smoothed values actually applied
 
 	// Neutral head-pose reference: captured on the first frame and subtracted so
 	// the model faces forward at the user's natural pose. The tray "recenter"
@@ -57,18 +22,19 @@ export async function startFaceTracking(
 
 	worker.onmessage = (e: MessageEvent<FaceWorkerMessage>) => {
 		if (e.data.type !== "result") return;
-		mapResult(e.data, target, config, calibration, gazeCalibration);
+		mapResult(e.data, driver.pose, config, calibration, gazeCalibration);
+		driver.markFaceFresh();
 		// No-op unless the face-debug window is open (electron/face-debug-window.ts).
 		window.electronAPI?.faceDebug?.send(e.data);
 	};
 	// A worker crash after init would otherwise be silent — the model just freezes at
 	// its last pose. Surface it and release the camera so the webcam light turns off.
+	// The rig needs no notification: results stop, so it goes stale and the cursor takes over.
 	worker.onerror = (e) => {
 		console.warn("[face] worker crashed, tracking stopped:", e.message);
 		worker.terminate();
 		track.stop();
 	};
-	driveModel(model, rig, target, config, modelConfig);
 }
 
 interface HeadCalibration {
@@ -143,81 +109,6 @@ async function startDetectionWorker(track: MediaStreamTrack, config: Config): Pr
 	return worker;
 }
 
-// Smooths `rig` toward `target` and writes parameters. Face params go on
-// afterMotionUpdate (so the hair/cloth physics reacts to them); body + gain params
-// go on beforeModelUpdate (after physics, which would otherwise clobber them).
-function driveModel(
-	model: Live2DModel,
-	rig: Rig,
-	target: Rig,
-	config: Config,
-	modelConfig: ModelConfig,
-): void {
-	const internal = model.internalModel as any;
-	const cm = internal.coreModel;
-	internal.eyeBlink = undefined; // we drive the eyes ourselves
-	(model as any).automator.autoFocus = false; // stop following the mouse
-
-	const set = (id: string, v: number) => cm.setParameterValueById(id, v);
-	const head = modelConfig.headAngle;
-
-	internal.on("afterMotionUpdate", () => {
-		for (const k of RIG_KEYS) rig[k] += (target[k] - rig[k]) * config.smoothing;
-
-		set(head.x, rig.angleX);
-		set(head.y, rig.angleY);
-		set(head.z, rig.angleZ);
-		set("ParamEyeLOpen", rig.eyeLOpen);
-		set("ParamEyeROpen", rig.eyeROpen);
-		set("ParamEyeBallX", rig.eyeBallX);
-		set("ParamEyeBallY", rig.eyeBallY);
-		set("ParamMouthOpenY", rig.mouthOpen);
-		set("ParamMouthForm", rig.mouthForm);
-		set("ParamBrowLY", rig.browLY);
-		set("ParamBrowRY", rig.browRY);
-	});
-
-	// Resolve each [gain] setting's physics-output params to their rest values once.
-	const restById = new Map(
-		(cm._model.parameters.ids as string[]).map(
-			(id, index) => [id, cm.getParameterDefaultValue(index)] as const,
-		),
-	);
-	const gainGroups: { gain: number; params: { id: string; rest: number }[] }[] = [];
-	for (const { value, params } of Object.values(modelConfig.gain)) {
-		if (value === 1) continue;
-		const matched = params
-			.filter((id) => restById.has(id))
-			.map((id) => ({ id, rest: restById.get(id) as number }));
-		if (matched.length) gainGroups.push({ gain: value, params: matched });
-	}
-
-	const swing = (params: { id: string; rest: number }[], gain: number) => {
-		for (const p of params) {
-			const cur = cm.getParameterValueById(p.id);
-			set(p.id, p.rest + (cur - p.rest) * gain);
-		}
-	};
-
-	// Linear body-follow as a fallback, applied after physics so it wins — but only
-	// for body params the model's physics does NOT already derive from the head. When
-	// physics drives the body, overriding it here fights the sim and can invert the
-	// lean (the body swings opposite the head), so we leave those to physics.
-	const f = config.bodyFollow;
-	const physicsDriven = new Set(modelConfig.physicsBodyParams);
-	const followBody = (id: string, v: number) => {
-		if (!physicsDriven.has(id)) set(id, v);
-	};
-	internal.on("beforeModelUpdate", () => {
-		followBody("ParamBodyAngleX", rig.angleX * f);
-		followBody("ParamBodyAngleY", rig.angleY * f);
-		followBody("ParamBodyAngleZ", rig.angleZ * f);
-		followBody("ParamBodyAngleZ2", rig.angleZ * f);
-
-		for (const g of gainGroups) swing(g.params, g.gain);
-	});
-}
-
 function mapResult(
 	res: FaceResult,
 	out: Rig,
@@ -227,7 +118,7 @@ function mapResult(
 ): void {
 	const v = (name: string) => res.blend[name] ?? 0;
 
-	const { mirror, headGain, headClampDeg: lim, eyes: ec, jaw: jc } = config;
+	const { mirror, headGain, eyes: ec, jaw: jc } = config;
 	const ms = mirror ? -1 : 1;
 
 	// Head pose from the 4x4 facial transformation matrix (column-major), made
@@ -248,9 +139,10 @@ function mapResult(
 			cal.recenter = false;
 		}
 
-		out.angleX = clamp((yaw - cal.yaw) * ms * headGain, -lim, lim);
-		out.angleY = clamp(-(pitch - cal.pitch) * headGain, -lim, lim);
-		out.angleZ = clamp(-(roll - cal.roll) * ms * headGain, -lim, lim);
+		// Unclamped — the rig driver applies headClampDeg to whichever source is driving.
+		out.angleX = (yaw - cal.yaw) * ms * headGain;
+		out.angleY = -(pitch - cal.pitch) * headGain;
+		out.angleZ = -(roll - cal.roll) * ms * headGain;
 	}
 
 	// Eyes — mirror-swap so it reads like a mirror. Blink is shaped like the jaw:
@@ -285,8 +177,8 @@ function mapResult(
 		const [baseL, baseR] = gazeCal.baseline;
 		const gx = (left.ox - baseL.ox + (right.ox - baseR.ox)) / 2;
 		const gy = (left.oy - baseL.oy + (right.oy - baseR.oy)) / 2;
-		out.eyeBallX = clamp(gx * ec.gazeGain, -1, 1);
-		out.eyeBallY = clamp(gy * ec.gazeGain, -1, 1);
+		out.eyeBallX = gx * ec.gazeGain;
+		out.eyeBallY = gy * ec.gazeGain;
 
 		// Deadzone kills closed-mouth jitter; curve reshapes; gain scales the result.
 		const ratio = mouthOpenRatio(lm);

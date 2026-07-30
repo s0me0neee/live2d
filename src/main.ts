@@ -5,6 +5,8 @@ import { startFaceTracking } from "./face-tracking";
 import { setupExpressions } from "./expressions";
 import { setupPhysics } from "./physics";
 import { setupInteraction } from "./interaction";
+import { setupCursorLook } from "./cursor-look";
+import { createRigDriver } from "./rig";
 import { setupWindowControls } from "./window-controls";
 import { mountFps } from "./fps";
 import { modelAssetUrl } from "./model-url";
@@ -64,12 +66,25 @@ if (!modelConfig.location || !modelConfig.model) {
 
 	globalThis.__model = model; // pokeable from devtools
 
+	// The runtime's built-in mouse-follow writes the head params directly, ignoring the
+	// model's physics-aware headAngle ids and every tuning knob. cursor-look.ts feeds the
+	// rig instead, so this stays off; off here rather than in a feature module so it's
+	// off even when that one bails out.
+	(model as any).automator.autoFocus = false;
+
 	setupPhysics(model, config);
 	setupInteraction(app, model, modelConfig);
 
+	// Owns all parameter writing, and runs whether or not the sources below start, so a
+	// machine with no camera still gets clamping, smoothing and body-follow.
+	const rig = createRigDriver(model, config, modelConfig);
+
 	// Guarded so the app survives camera denial / missing expression assets.
-	startFaceTracking(model, config, modelConfig).catch((err) =>
+	startFaceTracking(rig, config).catch((err) =>
 		console.warn("Face tracking disabled:", err),
+	);
+	setupCursorLook(rig.look, app, model, config).catch((err) =>
+		console.warn("Cursor look disabled:", err),
 	);
 	setupExpressions(model, modelConfig, config.showExpressions).catch((err) =>
 		console.warn("Expressions disabled:", err),
