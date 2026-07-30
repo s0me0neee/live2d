@@ -1,0 +1,58 @@
+location = "/Users/maot27/Documents/live2dModels/qq小黑猫"
+model = "JK小猫.model3.json"
+
+[gain]
+X = 1
+Y = 1
+Z = 1
+"眉眼联动" = 1
+"左眼" = 1
+"右眼" = 1
+"刘海" = 1
+"左刘海" = 1
+"右刘海" = 1
+"右后发" = 1
+"左后发" = 1
+"后发" = 1
+"后发Y" = 1
+"裙子X" = 1
+"裙子Y" = 1
+"左手臂" = 1
+"右手臂" = 1
+"右耳" = 1
+"左耳" = 1
+
+[expressions."哭哭"]
+file = "哭哭.exp3.json"
+key = "1"
+active = false
+
+[expressions."害怕"]
+file = "害怕.exp3.json"
+key = "2"
+active = false
+
+[expressions."开关"]
+file = "开关.exp3.json"
+key = "3"
+active = false
+
+[expressions."流汗"]
+file = "流汗.exp3.json"
+key = "4"
+active = false
+
+[expressions."生气"]
+file = "生气.exp3.json"
+key = "5"
+active = false
+
+[expressions."眼泪"]
+file = "眼泪.exp3.json"
+key = "6"
+active = false
+
+[pos]
+x = 363
+y = 290.12109375
+scale = 1

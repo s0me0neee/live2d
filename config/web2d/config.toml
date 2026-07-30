@@ -1,15 +1,15 @@
-model = "jk_black_cat_linux"
+model = "zero"
 mirror = true
-smoothing = 0.6
-headGain = 1.1
-headClampDeg = 90
-bodyFollow = 0.4
+smoothing = 0.65
+headGain = 1.05
+headClampDeg = 120
+bodyFollow = 0.7
 breath = 0.4
-renderFps = 120
-detectFps = 50
+renderFps = 100
+detectFps = 40
 lockHotkey = "CommandOrControl+Shift+Z"
-showFps = false
-showExpressions = false
+showFps = true
+showExpressions = true
 hyprlandAutoBind = true
 recenterHotkey = "CommandOrControl+Shift+R"
 
@@ -17,7 +17,7 @@ recenterHotkey = "CommandOrControl+Shift+R"
 windEnabled = false
 gust = 0.05
 gustHz = 0.5
-springiness = 1.015
+springiness = 1.012
 
 [physics.wind]
 x = 0.03
@@ -25,7 +25,7 @@ y = -0.03
 
 [eyes]
 deadzone = 0
-curve = 1.8
+curve = 1.6
 gain = 1
 gazeGain = 1.1
 
@@ -36,5 +36,5 @@ curve = 1
 gain = 1.1
 
 [camera]
-width = 720
-height = 405
+width = 800
+height = 420

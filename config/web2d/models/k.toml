@@ -1,0 +1,226 @@
+location = "/Users/maot27/Documents/live2dModels/镌恒执刀繁花永恒"
+model = "镌恒执刀繁花永恒.model3.json"
+
+[gain]
+"笑" = 1.4
+"嘴X" = 1.4
+"嘴Y" = 1.4
+"睫毛" = 1.4
+"睫毛(2)" = 1.4
+"眼珠" = 1.4
+"眼珠(2)" = 1.4
+X = 1.4
+Y = 1.4
+"腿x" = 1.4
+"腿y" = 1.4
+"腿物理后" = 1.4
+"腿物理前" = 1.4
+"光环2" = 1.4
+"肩膀" = 1.4
+"裙摆" = 1.4
+"蝴蝶结" = 1.4
+"挂坠1" = 1.4
+"挂坠1(2)" = 1
+"丝带" = 1.4
+"裙摆高光" = 1.4
+"蝴蝶尾巴" = 1.4
+"蝴蝶尾巴(2)" = 1.4
+"手臂" = 1.4
+"麦克风" = 1.4
+"麦克风花" = 1.4
+"骷髅手臂" = 1.4
+"写字羽毛" = 1.4
+"腿花朵" = 1.4
+"后发" = 1.4
+"刘海" = 1.4
+"刘海(2)" = 1.4
+"刘海头饰花朵" = 1.4
+"刘海发饰" = 1.4
+"身体饰品" = 1.4
+"身体饰品(2)" = 1.4
+"耳坠" = 1.4
+"反光" = 1.4
+XX = 1.4
+YY = 1.4
+"YY(2)" = 1.4
+"呼吸" = 1.4
+"宠物" = 1.4
+"花朵1" = 1.4
+"花朵2" = 1.4
+"花朵3" = 1.4
+"花朵3(2)" = 1.4
+"花朵3(3)" = 1.4
+"宠物尾巴" = 1.4
+"宠物物理x" = 1.4
+"宠物物理y" = 1.4
+"宠物物理y(2)" = 1.4
+
+[expressions."1呆滞"]
+file = "1呆滞.exp3.json"
+key = "1"
+active = false
+
+[expressions."1星星"]
+file = "1星星.exp3.json"
+key = "2"
+active = false
+
+[expressions."1流泪"]
+file = "1流泪.exp3.json"
+key = "3"
+active = false
+
+[expressions."1爱心"]
+file = "1爱心.exp3.json"
+key = "4"
+active = false
+
+[expressions."1生气"]
+file = "1生气.exp3.json"
+key = "5"
+active = false
+
+[expressions."1眯眼"]
+file = "1眯眼.exp3.json"
+key = "6"
+active = false
+
+[expressions."1眼镜"]
+file = "1眼镜.exp3.json"
+key = "7"
+active = false
+
+[expressions."1睫毛"]
+file = "1睫毛.exp3.json"
+key = "8"
+active = false
+
+[expressions."1脸红"]
+file = "1脸红.exp3.json"
+key = "9"
+active = false
+
+[expressions."1脸黑"]
+file = "1脸黑.exp3.json"
+key = "0"
+active = false
+
+[expressions."1花花"]
+file = "1花花.exp3.json"
+key = ""
+active = false
+
+[expressions."1问号"]
+file = "1问号.exp3.json"
+key = ""
+active = false
+
+[expressions."2写字 刻刀"]
+file = "2写字 刻刀.exp3.json"
+key = ""
+active = false
+
+[expressions."2写字 毛笔"]
+file = "2写字 毛笔.exp3.json"
+key = ""
+active = false
+
+[expressions."2写字点击"]
+file = "2写字点击.exp3.json"
+key = ""
+active = false
+
+[expressions."2刀 刻刀"]
+file = "2刀 刻刀.exp3.json"
+key = ""
+active = false
+
+[expressions."2刀"]
+file = "2刀.exp3.json"
+key = ""
+active = false
+
+[expressions."2刀点击"]
+file = "2刀点击.exp3.json"
+key = ""
+active = false
+
+[expressions."2垂手"]
+file = "2垂手.exp3.json"
+key = ""
+active = false
+
+[expressions."2宝石"]
+file = "2宝石.exp3.json"
+key = ""
+active = false
+
+[expressions."2宝石2"]
+file = "2宝石2.exp3.json"
+key = ""
+active = false
+
+[expressions."2捂嘴"]
+file = "2捂嘴.exp3.json"
+key = ""
+active = false
+
+[expressions."2捂嘴1"]
+file = "2捂嘴1.exp3.json"
+key = ""
+active = false
+
+[expressions."2捂嘴2"]
+file = "2捂嘴2.exp3.json"
+key = ""
+active = false
+
+[expressions."2翻花绳"]
+file = "2翻花绳.exp3.json"
+key = ""
+active = false
+
+[expressions."2递出"]
+file = "2递出.exp3.json"
+key = ""
+active = false
+
+[expressions."2递出2"]
+file = "2递出2.exp3.json"
+key = ""
+active = false
+
+[expressions."2骷髅 刻刀"]
+file = "2骷髅 刻刀.exp3.json"
+key = ""
+active = false
+
+[expressions."2骷髅"]
+file = "2骷髅.exp3.json"
+key = ""
+active = false
+
+[expressions."2麦克风"]
+file = "2麦克风.exp3.json"
+key = ""
+active = false
+
+[expressions."吐舌"]
+file = "吐舌.exp3.json"
+key = ""
+active = false
+
+[expressions."背景1"]
+file = "背景1.exp3.json"
+key = ""
+active = false
+
+[expressions."背景2"]
+file = "背景2.exp3.json"
+key = ""
+active = true
+
+[expressions."背景3"]
+file = "背景3.exp3.json"
+key = ""
+active = true

@@ -80,7 +80,7 @@ active = false
 [expressions."右手动作"]
 file = "右手动作.exp3.json"
 key = "4"
-active = true
+active = false
 
 [expressions."右摇杆R1"]
 file = "右摇杆R1.exp3.json"
