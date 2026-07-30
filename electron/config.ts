@@ -128,6 +128,23 @@ export function loadHyprlandAutoBindSync(): boolean {
 	}
 }
 
+// Just the two keys the main-process cursor poller needs, read fresh on each lock so
+// an edit takes effect without a restart. The renderer gets `range`/`gain` the normal
+// way, through config:get.
+export function loadCursorLookSync(): { enabled: boolean; fps: number } {
+	const fallback = { enabled: DEFAULT_CONFIG.cursorLook.enabled, fps: DEFAULT_CONFIG.detectFps };
+	try {
+		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+		const look = isObject(root.cursorLook) ? root.cursorLook : {};
+		return {
+			enabled: typeof look.enabled === "boolean" ? look.enabled : fallback.enabled,
+			fps: typeof root.detectFps === "number" ? root.detectFps : fallback.fps,
+		};
+	} catch {
+		return fallback;
+	}
+}
+
 export type UiToggle = "showFps" | "showExpressions";
 
 // Read synchronously so the tray's initial checkbox state is ready in the launch tick.

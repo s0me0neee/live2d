@@ -41,6 +41,19 @@ export interface Config {
 	// hyprland.conf edit is needed. No-op off Linux, or if hyprctl isn't a Hyprland session.
 	hyprlandAutoBind: boolean;
 
+	// Make the model watch the mouse when face tracking has nothing to say (no camera,
+	// or no face in frame). Linux/Hyprland only: while click-through the window gets no
+	// pointer events at all, so the compositor is polled for the global cursor at
+	// detectFps instead. Feeds the same rig as face tracking, so headClampDeg,
+	// smoothing and bodyFollow all apply on top of these.
+	cursorLook: {
+		enabled: boolean;
+		range: number; // cursor distance for full deflection, in model heights
+		headDeg: number; // head turn at full deflection, same unit as headClampDeg
+		eyeGain: number; // >1 saturates the eyes before the head; 2 = at half `range`
+		lagMs: number; // follow lag; higher = lazier, 0 = off. Stacks on `smoothing`.
+	};
+
 	showFps: boolean;
 	showExpressions: boolean;
 }
@@ -70,6 +83,7 @@ export const DEFAULT_CONFIG: Config = {
 	lockHotkey: "CommandOrControl+Alt+L",
 	recenterHotkey: "CommandOrControl+Alt+R",
 	hyprlandAutoBind: false,
+	cursorLook: { enabled: true, range: 1.5, headDeg: 24, eyeGain: 2, lagMs: 120 },
 	showFps: true,
 	showExpressions: true,
 };

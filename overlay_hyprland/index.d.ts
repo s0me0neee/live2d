@@ -16,11 +16,27 @@ export interface ClientInfo {
 }
 
 /**
+ * The pointer position in the global layout, in the same coordinates as
+ * `ClientInfo`'s `x`/`y`.
+ */
+export interface CursorPos {
+  x: number
+  y: number
+}
+
+/**
  * All mapped windows. Find ours by `pid` (the Electron main process owns the
  * Wayland connection, so its `process.pid` is what Hyprland reports),
  * disambiguating multiple windows of the same process by `title`/`class`.
  */
 export declare function getClients(): Array<ClientInfo>
+
+/**
+ * Where the pointer is right now (`hyprctl cursorpos`). Wayland never tells a
+ * client about a pointer that isn't over it, so this is the only way to follow
+ * the cursor while the overlay is click-through.
+ */
+export declare function getCursorPos(): CursorPos
 
 /** All connected monitors, for clamping window geometry to the visible layout. */
 export declare function getMonitors(): Array<MonitorInfo>

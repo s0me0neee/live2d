@@ -20,6 +20,7 @@ import type { FaceResult } from "../src/face-worker";
 import { createLogger, color } from "./log";
 import {
 	loadConfig,
+	loadCursorLookSync,
 	loadHotkeysSync,
 	loadHyprlandAutoBindSync,
 	loadUiTogglesSync,
@@ -192,7 +193,11 @@ function setOverlayLock(win: BrowserWindow, locked: boolean): void {
 	// forward:true still delivers mousemove (for hover) while clicks pass through — but
 	// it's macOS/Windows-only, so hover reactions while locked are lost on Linux/Wayland.
 	win.setIgnoreMouseEvents(locked, { forward: true });
-	if (IS_LINUX) applyHyprlandLock(locked); // toggle the no-focus/border/blur overlay rules
+	if (IS_LINUX) {
+		applyHyprlandLock(locked); // toggle the no-focus/border/blur overlay rules
+		if (locked) startCursorPoll(win);
+		else stopCursorPoll();
+	}
 	win.webContents.send("overlay:lock-changed", locked);
 	refreshTrayMenu();
 	log.info(`overlay ${locked ? color.yellow("locked (click-through)") : color.green("unlocked (clickable)")}`);
@@ -295,6 +300,7 @@ interface OverlayHyprlandModule {
 	setKeyword(key: string, value: string): void;
 	setWindowRules(name: string, rules: WindowRule[]): void;
 	getClients(): HyprlandClient[];
+	getCursorPos(): { x: number; y: number };
 	moveWindowTo(address: string, x: number, y: number): void;
 	resizeWindowTo(address: string, width: number, height: number): void;
 }
@@ -433,6 +439,56 @@ function restoreLinuxBounds(): void {
 		}
 	};
 	tryRestore();
+}
+
+// Click-through means Wayland delivers no pointer events at all (setIgnoreMouseEvents'
+// forward:true is macOS/Windows-only, and HYPRLAND_LOCK_RULES sets no_follow_mouse), so
+// the renderer can't see where the mouse is. Poll the compositor instead and hand it
+// window-local coordinates; unlocked, ordinary pointer events take over and this stops.
+const CURSOR_GEOMETRY_MS = 500; // the overlay rarely moves, so don't re-read it per tick
+
+let cursorTimer: ReturnType<typeof setInterval> | undefined;
+
+function startCursorPoll(win: BrowserWindow): void {
+	if (cursorTimer || !onHyprland()) return;
+	const { enabled, fps } = loadCursorLookSync();
+	if (!enabled) return;
+	const h = hyprland();
+	if (!h) return;
+
+	let geometry: HyprlandClient | null = null;
+	let geometryAt = 0;
+	let lastX = NaN;
+	let lastY = NaN;
+
+	cursorTimer = setInterval(() => {
+		if (win.isDestroyed()) return stopCursorPoll();
+		const now = Date.now();
+		if (now - geometryAt > CURSOR_GEOMETRY_MS) {
+			geometry = overlayHyprlandClient();
+			geometryAt = now;
+		}
+		if (!geometry) return;
+
+		let cursor: { x: number; y: number };
+		try {
+			cursor = h.getCursorPos();
+		} catch (e) {
+			log.warn(`hyprland cursorpos failed, cursor look off: ${(e as Error).message}`);
+			return stopCursorPoll();
+		}
+		if (cursor.x === lastX && cursor.y === lastY) return; // an idle cursor costs no IPC
+		lastX = cursor.x;
+		lastY = cursor.y;
+		win.webContents.send("cursor:pos", { x: cursor.x - geometry.x, y: cursor.y - geometry.y });
+	}, Math.round(1000 / Math.max(1, fps)));
+
+	log.debug(`cursor look polling at ${fps}fps`);
+}
+
+function stopCursorPoll(): void {
+	clearInterval(cursorTimer);
+	cursorTimer = undefined;
 }
 
 // Best-effort `hyprctl keyword`; a rejected keyword throws (setKeyword checks the
@@ -637,6 +693,12 @@ function registerOverlayIpc(): void {
 		if (win) setOverlayLock(win, !overlayLocked);
 		return overlayLocked;
 	});
+	// Gates the renderer's own pointer-driven look-at too, so the whole feature stays
+	// Hyprland-only rather than Linux-generally (electronAPI.platform can't tell them apart).
+	ipcMain.handle(
+		"cursor:supported",
+		() => IS_LINUX && onHyprland() && loadCursorLookSync().enabled,
+	);
 }
 
 function createWindow(): void {
@@ -691,6 +753,7 @@ function createWindow(): void {
 			const c = overlayHyprlandClient();
 			if (c) persistBounds({ x: c.x, y: c.y, width: c.width, height: c.height });
 		});
+		win.on("closed", stopCursorPoll);
 	}
 
 	win.once("ready-to-show", () => {
@@ -816,6 +879,7 @@ app.on("will-quit", () => {
 	// Electron reliably). Note SIGTERM/SIGINT — how `pnpm dev` stops — skips will-quit;
 	// the debounced resize save in createWindow covers the geometry during the session.
 	clearTimeout(winSaveTimer);
+	stopCursorPoll();
 	if (IS_LINUX) {
 		const c = overlayHyprlandClient();
 		if (c) {

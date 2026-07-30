@@ -103,6 +103,32 @@ pub fn get_monitors() -> Result<Vec<MonitorInfo>> {
         .collect())
 }
 
+/// The pointer position in the global layout, in the same coordinates as
+/// `ClientInfo`'s `x`/`y`.
+#[napi(object)]
+pub struct CursorPos {
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Where the pointer is right now (`hyprctl cursorpos`). Wayland never tells a
+/// client about a pointer that isn't over it, so this is the only way to follow
+/// the cursor while the overlay is click-through.
+#[napi]
+pub fn get_cursor_pos() -> Result<CursorPos> {
+    let reply = command::send("cursorpos")?;
+    parse_cursor_pos(reply.trim())
+        .ok_or_else(|| Error::from_reason(format!("unexpected cursorpos reply: {reply:?}")))
+}
+
+fn parse_cursor_pos(reply: &str) -> Option<CursorPos> {
+    let (x, y) = reply.split_once(',')?;
+    Some(CursorPos {
+        x: x.trim().parse().ok()?,
+        y: y.trim().parse().ok()?,
+    })
+}
+
 /// Moves the window by a delta in pixels (`movewindowpixel` dispatch).
 /// Deltas avoid needing global cursor coordinates, which Wayland doesn't expose.
 #[napi]

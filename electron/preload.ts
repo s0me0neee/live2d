@@ -65,6 +65,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		},
 	},
 
+	// Make the model watch the mouse. `supported` is false off Hyprland (or when the
+	// feature is off) — the only compositor whose cursor we can read while click-through.
+	// `onPos` fires only while locked, with window-local coordinates; unlocked, the
+	// renderer reads the cursor from ordinary pointer events. Returns an unsubscribe fn.
+	cursorLook: {
+		supported: (): Promise<boolean> => ipcRenderer.invoke("cursor:supported"),
+		onPos: (cb: (p: { x: number; y: number }) => void): (() => void) => {
+			const listener = (_e: unknown, p: { x: number; y: number }) => cb(p);
+			ipcRenderer.on("cursor:pos", listener);
+			return () => ipcRenderer.removeListener("cursor:pos", listener);
+		},
+	},
+
 	// Read / rebind a global accelerator (settings window). "" unbinds it. set()
 	// resolves false if a non-empty accelerator is invalid or already taken.
 	hotkey: {

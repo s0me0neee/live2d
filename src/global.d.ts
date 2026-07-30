@@ -34,6 +34,11 @@ declare global {
 				send(result: FaceResult): void;
 				onData(cb: (result: FaceResult) => void): () => void;
 			};
+			// Global cursor position while click-through (src/cursor-look.ts).
+			cursorLook: {
+				supported(): Promise<boolean>;
+				onPos(cb: (p: { x: number; y: number }) => void): () => void;
+			};
 			hotkey: {
 				get(id: HotkeyId): Promise<string>;
 				set(id: HotkeyId, accelerator: string): Promise<boolean>;

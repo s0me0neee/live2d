@@ -588,6 +588,7 @@ if (!nativeBinding) {
 
 module.exports = nativeBinding
 module.exports.getClients = nativeBinding.getClients
+module.exports.getCursorPos = nativeBinding.getCursorPos
 module.exports.getMonitors = nativeBinding.getMonitors
 module.exports.isHyprland = nativeBinding.isHyprland
 module.exports.moveWindowBy = nativeBinding.moveWindowBy
