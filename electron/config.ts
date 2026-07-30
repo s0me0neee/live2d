@@ -129,8 +129,8 @@ export function loadHyprlandAutoBindSync(): boolean {
 }
 
 // Just the two keys the main-process cursor poller needs, read fresh on each lock so
-// an edit takes effect without a restart. The renderer gets `range`/`gain` the normal
-// way, through config:get.
+// an edit takes effect without a restart. The renderer gets the mapping knobs
+// (range/headDeg/eyeGain/lagMs) the normal way, through config:get.
 export function loadCursorLookSync(): { enabled: boolean; fps: number } {
 	const fallback = { enabled: DEFAULT_CONFIG.cursorLook.enabled, fps: DEFAULT_CONFIG.detectFps };
 	try {
