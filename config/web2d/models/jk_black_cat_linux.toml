@@ -15,7 +15,7 @@ Y = 1
 "YCT(2)" = 1
 "z眨眼" = 1
 "y眨眼" = 1
-"身体乳摇x" = 1
+"身体乳摇x" = 1.3
 xyjm = 1
 ZED = 1
 YED = 1
@@ -30,8 +30,8 @@ TZ = 1
 "真身体y" = 1
 "真身体z" = 1
 "表情眼" = 1
-weiba = 1
-"weiba(2)" = 1
+weiba = 1.5
+"weiba(2)" = 1.5
 
 [expressions."兽尾-隐藏1"]
 file = "兽尾-隐藏1.exp3.json"
@@ -86,7 +86,7 @@ active = false
 [expressions."手-手提包隐藏"]
 file = "手-手提包隐藏.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."手-抱猫"]
 file = "手-抱猫.exp3.json"
@@ -106,7 +106,7 @@ active = false
 [expressions."眼-左眼粉瞳色"]
 file = "眼-左眼粉瞳色.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."眼-平静死鱼眼"]
 file = "眼-平静死鱼眼.exp3.json"
@@ -166,7 +166,7 @@ active = false
 [expressions."脸-绷带和血一起隐藏"]
 file = "脸-绷带和血一起隐藏.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."脸红-痴汉嘴（兼容吐舌"]
 file = "脸红-痴汉嘴（兼容吐舌.exp3.json"
@@ -191,7 +191,7 @@ active = false
 [expressions."身-围巾"]
 file = "身-围巾.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."身-毛衣"]
 file = "身-毛衣.exp3.json"
@@ -201,7 +201,7 @@ active = false
 [expressions."身-腿绷带血隐藏"]
 file = "身-腿绷带血隐藏.exp3.json"
 key = ""
-active = false
+active = true
 
 [expressions."身-腿绷带隐藏"]
 file = "身-腿绷带隐藏.exp3.json"

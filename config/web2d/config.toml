@@ -1,15 +1,15 @@
-model = "zero"
+model = "jk_black_cat_linux"
 mirror = true
-smoothing = 0.65
+smoothing = 0.6
 headGain = 1.05
 headClampDeg = 120
 bodyFollow = 0.7
 breath = 0.4
 renderFps = 100
-detectFps = 40
+detectFps = 35
 lockHotkey = "CommandOrControl+Shift+Z"
-showFps = true
-showExpressions = true
+showFps = false
+showExpressions = false
 hyprlandAutoBind = true
 recenterHotkey = "CommandOrControl+Shift+R"
 
@@ -38,3 +38,10 @@ gain = 1.1
 [camera]
 width = 800
 height = 420
+
+[cursorLook]
+enabled = true
+range = 1.5
+headDeg = 24
+eyeGain = 2
+lagMs = 120
