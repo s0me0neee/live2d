@@ -48,6 +48,14 @@ if (!modelConfig.location || !modelConfig.model) {
 } else {
 	const base = modelConfig.resolvedLocation || modelConfig.location;
 	const model = await Live2DModel.from(modelAssetUrl(base, modelConfig.model));
+
+	// Cubism's clip-mask capacity is 36 with a single render texture; models with more
+	// distinct clip-mask groups than that fall back every frame to cramming all masks
+	// into one shared buffer/channel, which is both visually wrong and a perf sink.
+	// pixi-live2d-display always initializes with maskBufferCount=1, so bump it here.
+	const internal = model.internalModel as any;
+	internal.renderer.initialize(internal.coreModel, 2);
+
 	app.stage.addChild(model);
 	model.anchor.set(0.5, 0.5);
 	// First load: centered at scale 1. setupInteraction restores [pos] if present.
