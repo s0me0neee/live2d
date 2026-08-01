@@ -5,6 +5,12 @@
 use napi::bindgen_prelude::*;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
+
+// This is called from a poll loop on Electron's main thread (see the cursor-look
+// poller in electron/main.ts), so a hung compositor socket must not be able to block
+// forever — that would freeze the whole app, not just cursor-look.
+const IO_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn socket_path() -> Result<String> {
     let sig = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").map_err(|_| {
@@ -19,6 +25,8 @@ pub(crate) fn send(command: &str) -> Result<String> {
     let path = socket_path()?;
     let io_err = |e: std::io::Error| Error::from_reason(format!("hyprland socket: {e}"));
     let mut stream = UnixStream::connect(&path).map_err(io_err)?;
+    stream.set_read_timeout(Some(IO_TIMEOUT)).map_err(io_err)?;
+    stream.set_write_timeout(Some(IO_TIMEOUT)).map_err(io_err)?;
     stream.write_all(command.as_bytes()).map_err(io_err)?;
     let mut reply = String::new();
     stream.read_to_string(&mut reply).map_err(io_err)?;

@@ -20,6 +20,10 @@ macro_rules! log {
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 type Setup<T> = std::result::Result<T, BoxError>;
 
+// Bounds the blocking `start()` call below — it runs on Electron's main thread during
+// boot, so a hung session-bus connect must not be able to freeze the app forever.
+const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 #[napi(object)]
 pub struct Shortcut {
     pub id: String,
@@ -56,10 +60,15 @@ pub fn start(
         runtime.block_on(run(app_id, shortcuts, on_activated, ready_tx));
     });
 
-    match ready_rx.recv() {
+    match ready_rx.recv_timeout(READY_TIMEOUT) {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(Error::from_reason(e)),
-        Err(_) => Err(Error::from_reason("global_hotkey worker exited before setup")),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(Error::from_reason(
+            "portal did not respond within the timeout — is a GlobalShortcuts-capable portal running?",
+        )),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err(Error::from_reason("global_hotkey worker exited before setup"))
+        }
     }
 }
 
@@ -122,6 +131,12 @@ async fn run(
             }
         }
         log!("Activated stream ended");
+        // The signal stream only ends if the session bus connection drops (compositor
+        // restart, etc.) — tell JS so it isn't left silently believing hotkeys still work.
+        on_activated.call(
+            Err(Error::from_reason("global_hotkey: Activated stream ended")),
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
         Ok(())
     }
     .await;
@@ -132,9 +147,8 @@ async fn run(
     }
 }
 
-// The portal replies to CreateSession/BindShortcuts asynchronously via a Response signal
-// on a Request object whose path is derived from our bus name + handle_token. We subscribe
-// on that predicted path BEFORE issuing the call so a fast reply can't race us.
+// Subscribe on the Response signal's predicted path BEFORE issuing the call, so a fast
+// reply can't race us.
 async fn await_response(
     conn: &Connection,
     handle_token: &str,

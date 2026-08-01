@@ -6,7 +6,7 @@ import { setupExpressions } from "./expressions";
 import { setupPhysics } from "./physics";
 import { setupInteraction } from "./interaction";
 import { setupCursorLook } from "./cursor-look";
-import { createRigDriver } from "./rig";
+import { createRigDriver, type RigDriver } from "./rig";
 import { setupWindowControls } from "./window-controls";
 import { mountFps } from "./fps";
 import { modelAssetUrl } from "./model-url";
@@ -76,16 +76,23 @@ if (!modelConfig.location || !modelConfig.model) {
 	setupInteraction(app, model, modelConfig);
 
 	// Owns all parameter writing, and runs whether or not the sources below start, so a
-	// machine with no camera still gets clamping, smoothing and body-follow.
-	const rig = createRigDriver(model, config, modelConfig);
+	// machine with no camera still gets clamping, smoothing and body-follow. Guarded like
+	// the async setups below: an unexpected model/runtime shape shouldn't crash boot.
+	let rig: RigDriver | undefined;
+	try {
+		rig = createRigDriver(model, config, modelConfig);
+	} catch (err) {
+		console.warn("Rig driver failed to initialize — face tracking and cursor look disabled:", err);
+	}
 
-	// Guarded so the app survives camera denial / missing expression assets.
-	startFaceTracking(rig, config).catch((err) =>
-		console.warn("Face tracking disabled:", err),
-	);
-	setupCursorLook(rig.look, app, model, config).catch((err) =>
-		console.warn("Cursor look disabled:", err),
-	);
+	if (rig) {
+		startFaceTracking(rig, config).catch((err) =>
+			console.warn("Face tracking disabled:", err),
+		);
+		setupCursorLook(rig.look, app, model, config).catch((err) =>
+			console.warn("Cursor look disabled:", err),
+		);
+	}
 	setupExpressions(model, modelConfig, config.showExpressions).catch((err) =>
 		console.warn("Expressions disabled:", err),
 	);

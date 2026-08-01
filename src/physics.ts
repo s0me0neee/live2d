@@ -1,3 +1,4 @@
+import * as PIXI from "pixi.js";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { Config } from "./config";
 
@@ -34,12 +35,12 @@ export function setupPhysics(model: Live2DModel, config: Config): void {
 
 	const gust: number = p.gust;
 	if (gust !== 0) {
+		// Driven by the shared ticker (not a raw rAF loop) so it respects the renderFps
+		// cap main.ts applies everywhere else.
 		const start = performance.now();
-		const animate = () => {
+		PIXI.Ticker.shared.add(() => {
 			const t = (performance.now() - start) / 1000;
 			wind.x = p.wind.x + Math.sin(t * p.gustHz * Math.PI * 2) * gust;
-			requestAnimationFrame(animate);
-		};
-		requestAnimationFrame(animate);
+		});
 	}
 }

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { HotkeyId, Pos, ResolvedConfig } from "../src/config";
 import type { FaceResult } from "../src/face-worker";
+import { IS_WAYLAND } from "./platform";
 
 export interface Bounds {
 	x: number;
@@ -10,9 +11,11 @@ export interface Bounds {
 }
 
 contextBridge.exposeInMainWorld("electronAPI", {
-	// The host OS. The renderer gates platform-specific features off it — e.g. the
-	// OS-window move/resize guide only works on macOS (Wayland can't self-position).
+	// The host OS. isWayland flags the one thing Linux itself doesn't determine — the
+	// renderer's move/resize guide is off on Wayland (can't self-position) but on for
+	// macOS, Windows and X11 Linux alike.
 	platform: process.platform,
+	isWayland: IS_WAYLAND,
 	// Resolved TOML config, fetched once at boot.
 	getConfig: (): Promise<ResolvedConfig> => ipcRenderer.invoke("config:get"),
 	// Report the live transform to main (held in memory, written to the model TOML
@@ -65,10 +68,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		},
 	},
 
-	// Make the model watch the mouse. `supported` is false off Hyprland (or when the
-	// feature is off) — the only compositor whose cursor we can read while click-through.
-	// `onPos` fires only while locked, with window-local coordinates; unlocked, the
-	// renderer reads the cursor from ordinary pointer events. Returns an unsubscribe fn.
+	// Make the model watch the mouse. `supported` reflects the config toggle — main
+	// always has a working global-cursor source (Hyprland native, or Electron's screen
+	// API elsewhere). `onPos` fires only while locked, with window-local coordinates;
+	// unlocked, the renderer reads the cursor from ordinary pointer events. Returns an
+	// unsubscribe fn.
 	cursorLook: {
 		supported: (): Promise<boolean> => ipcRenderer.invoke("cursor:supported"),
 		onPos: (cb: (p: { x: number; y: number }) => void): (() => void) => {

@@ -589,11 +589,8 @@ if (!nativeBinding) {
 module.exports = nativeBinding
 module.exports.getClients = nativeBinding.getClients
 module.exports.getCursorPos = nativeBinding.getCursorPos
-module.exports.getMonitors = nativeBinding.getMonitors
 module.exports.isHyprland = nativeBinding.isHyprland
-module.exports.moveWindowBy = nativeBinding.moveWindowBy
 module.exports.moveWindowTo = nativeBinding.moveWindowTo
-module.exports.resizeWindowBy = nativeBinding.resizeWindowBy
 module.exports.resizeWindowTo = nativeBinding.resizeWindowTo
 module.exports.setKeyword = nativeBinding.setKeyword
 module.exports.setWindowRules = nativeBinding.setWindowRules

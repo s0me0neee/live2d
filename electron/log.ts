@@ -21,7 +21,7 @@ function tagColor(tag: string): (s: string) => string {
 	return TAG_COLORS[h % TAG_COLORS.length];
 }
 
-const timestamp = () => pc.gray(new Date().toTimeString().slice(0, 8));
+export const timestamp = () => pc.gray(new Date().toTimeString().slice(0, 8));
 
 // If the launching terminal dies, the app survives orphaned with a dead stdout;
 // without an error listener the next write raises EIO/EPIPE as an uncaught

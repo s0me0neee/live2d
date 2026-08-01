@@ -43,7 +43,13 @@ const mimeFor = (p: string) => MIME[p.split(".").pop()?.toLowerCase() ?? ""] ?? 
 // paths off disk — only files under a resolved model location.
 export function handleModelProtocol(isAllowed: (filePath: string) => boolean): void {
 	protocol.handle(MODEL_SCHEME, async (request) => {
-		const filePath = resolve(decodeURIComponent(new URL(request.url).pathname));
+		let filePath: string;
+		try {
+			filePath = resolve(decodeURIComponent(new URL(request.url).pathname));
+		} catch {
+			log.warn(`malformed model URL: ${color.dim(request.url)}`);
+			return new Response("bad request", { status: 400 });
+		}
 		if (!isAllowed(filePath)) {
 			log.warn(`blocked read outside allowed roots: ${color.dim(filePath)}`);
 			return new Response("forbidden", { status: 403 });

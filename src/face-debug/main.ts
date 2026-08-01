@@ -41,10 +41,9 @@ function resizeCanvas(): void {
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
-// The face only fills a small part of the full camera frame at typical webcam
-// distances, so mapping the raw [0,1] frame coordinates onto the canvas (the
-// previous approach) left the face tiny in a corner. Instead, zoom to a smoothed
-// bounding box around the actual landmarks each frame, like VTS's debug view does.
+// The face only fills a small part of the camera frame at typical webcam distances,
+// so zoom to a smoothed bounding box around the landmarks each frame instead of
+// mapping raw [0,1] frame coordinates straight onto the canvas.
 interface Box { x0: number; y0: number; x1: number; y1: number }
 let box: Box | null = null;
 
@@ -77,7 +76,7 @@ function updateBox(lm: NormalizedLandmark[]): void {
 
 // Maps `box` onto the canvas like CSS object-fit: contain, and returns the scale
 // factor too (needed to size the gaze line relative to the on-screen eye size).
-function transform(): { scale: number; offX: number; offY: number } {
+function transform(): Transform {
 	const dpr = window.devicePixelRatio || 1;
 	const cw = canvas.width / dpr;
 	const ch = canvas.height / dpr;
@@ -88,16 +87,15 @@ function transform(): { scale: number; offX: number; offY: number } {
 	return { scale, offX: (cw - bw * scale) / 2 - b.x0 * scale, offY: (ch - bh * scale) / 2 - b.y0 * scale };
 }
 
-function project(x: number, y: number): [number, number] {
-	const { scale, offX, offY } = transform();
-	return [offX + mirrorX(x) * scale, offY + y * scale];
+type Transform = { scale: number; offX: number; offY: number };
+
+function project(t: Transform, x: number, y: number): [number, number] {
+	return [t.offX + mirrorX(x) * t.scale, t.offY + y * t.scale];
 }
 
 let lastMessageAt = 0;
-// Arrival timestamps within the last second. Relayed over renderer→main→debug-window
-// IPC, messages don't land evenly spaced (the main process can queue a few and flush
-// them back-to-back) — an instantaneous 1/delta reading swings wildly on that jitter,
-// so count arrivals over a rolling window instead.
+// Arrival timestamps within the last second, counted over a rolling window rather than
+// an instantaneous 1/delta — relayed IPC messages don't land evenly spaced.
 const arrivals: number[] = [];
 
 window.electronAPI?.faceDebug.onData((result: FaceResult) => {
@@ -118,14 +116,10 @@ setInterval(() => {
 	statEl.textContent = tracking ? `${arrivals.length} FPS` : "no face detected";
 }, 200);
 
-// The eye contour's bounding-box center isn't the same point as where the iris
-// naturally rests looking straight ahead — eyelid shape is asymmetric and a webcam
-// usually sits above eye level, so the raw offset reads with a constant inward/
-// downward bias even at a neutral gaze. Captured on the first frame and whenever the
-// Recenter button is clicked, then subtracted so the arrow reflects a change from
-// neutral. Deliberately NOT re-captured automatically on any timing heuristic (e.g.
-// "tracking resumed") — that fired at unpredictable, possibly non-neutral moments,
-// which is worse than just letting the user recenter it explicitly on demand.
+// Neutral-gaze baseline: the eye bbox center reads with a constant bias even at rest
+// (asymmetric eyelid shape, webcam above eye level), so this is captured on the first
+// frame and on Recenter, then subtracted. Deliberately not auto-recaptured on a timing
+// heuristic (e.g. "tracking resumed") — that fired at unpredictable, non-neutral moments.
 let baseline: EyeOffset[] | null = null;
 
 function draw(result: FaceResult): void {
@@ -140,6 +134,7 @@ function draw(result: FaceResult): void {
 		return;
 	}
 	updateBox(lm);
+	const t = transform();
 
 	const needsBaseline = forceRecenter;
 	forceRecenter = false;
@@ -150,15 +145,15 @@ function draw(result: FaceResult): void {
 		ctx.fillStyle = color;
 		ctx.lineWidth = 1.5;
 		for (const { start, end } of connections) {
-			const [x1, y1] = project(lm[start].x, lm[start].y);
-			const [x2, y2] = project(lm[end].x, lm[end].y);
+			const [x1, y1] = project(t, lm[start].x, lm[start].y);
+			const [x2, y2] = project(t, lm[end].x, lm[end].y);
 			ctx.beginPath();
 			ctx.moveTo(x1, y1);
 			ctx.lineTo(x2, y2);
 			ctx.stroke();
 		}
 		for (const i of uniqueIndices(connections)) {
-			const [x, y] = project(lm[i].x, lm[i].y);
+			const [x, y] = project(t, lm[i].x, lm[i].y);
 			ctx.beginPath();
 			ctx.arc(x, y, 2.5, 0, Math.PI * 2);
 			ctx.fill();
@@ -168,9 +163,8 @@ function draw(result: FaceResult): void {
 	// Per eye: iris center as a dot, plus a ray from it pointing in the gaze
 	// direction — the same eyeOffsets() the real tracking rig uses, so this view
 	// can never drift from what actually drives the model.
-	const { scale } = transform();
 	const faceBox = box ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
-	const rayLen = (faceBox.x1 - faceBox.x0) * scale * 0.35;
+	const rayLen = (faceBox.x1 - faceBox.x0) * t.scale * 0.35;
 	const clamp1 = (v: number) => Math.min(1, Math.max(-1, v));
 
 	const eyes = eyeOffsets(lm, mirror);
@@ -182,7 +176,7 @@ function draw(result: FaceResult): void {
 		const oy = clamp1(raw.oy - base.oy);
 		readout.push(`${idx === 0 ? "L" : "R"} ${ox.toFixed(2)},${oy.toFixed(2)}`);
 
-		const [ix, iy] = project(raw.icx, raw.icy);
+		const [ix, iy] = project(t, raw.icx, raw.icy);
 		const tipX = ix + ox * rayLen;
 		const tipY = iy + oy * rayLen;
 

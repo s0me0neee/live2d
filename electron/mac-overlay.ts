@@ -1,11 +1,9 @@
-// Raw AppKit overlay tweaks for macOS, applied to the live BrowserWindow through
-// the Objective-C runtime via FFI (koffi). This mirrors what DmNote does in
-// native Rust (`apply_macos_overlay_fullscreen_behavior`): lift the NSWindow to
-// the status level, let it join every Space and float over fullscreen apps, and
-// stop it hiding when the app deactivates.
+// Raw AppKit overlay tweaks for macOS, applied to the live BrowserWindow via FFI
+// (koffi): status-level NSWindow, join every Space, float over fullscreen apps, don't
+// hide on deactivate. Mirrors DmNote's `apply_macos_overlay_fullscreen_behavior`.
 //
-// koffi is a native CommonJS addon; esbuild keeps it external (see
-// scripts/build-electron.mjs) so its prebuilt .node resolves at runtime.
+// koffi is a native CommonJS addon; esbuild keeps it external (scripts/build-electron.mjs)
+// so its prebuilt .node resolves at runtime.
 import koffi from "koffi";
 import type { BrowserWindow } from "electron";
 import { createLogger } from "./log";

@@ -10,6 +10,7 @@
 //   node scripts/release.mjs --preview  build prod, then run it locally (no packaging)
 
 import { spawn } from "node:child_process";
+import { spawnElectronFiltered, installCleanup } from "./spawn-electron.mjs";
 
 const args = new Set(process.argv.slice(2));
 const PREVIEW = args.has("--preview");
@@ -37,15 +38,9 @@ await run("node", ["scripts/build-electron.mjs"]);
 //    documents intent and is immune to a stray --mode override in the config.
 await run("pnpm", ["exec", "vite", "build", "--mode", "production"]);
 
-// --- ASSET CAVEAT ------------------------------------------------------------
-// In dev, /model and /mediapipe are served from the project root by Vite. They
-// are NOT in `vite build` output unless they live in `public/` or are imported.
-// For the packaged app you almost certainly want them shipped as
-// electron-builder `extraResources` (so the 4×4096² Live2D atlases + mediapipe
-// wasm are copied verbatim, not run through Rollup), with main.ts resolving them
-// via process.resourcesPath in production. Verify this before trusting a build —
-// it's the most likely thing to "work in dev, blank screen when packaged."
-// -----------------------------------------------------------------------------
+// Asset caveat: /model and /mediapipe are dev-only (served from the project root by
+// Vite, not in `vite build` output). Ship them as electron-builder `extraResources`
+// and resolve via process.resourcesPath in production — verify before trusting a build.
 
 if (PREVIEW) {
 	previewProductionBuild();
@@ -63,41 +58,16 @@ if (PREVIEW) {
 // is the real smoke test — it catches file:// path bugs, missing extraResources,
 // and NODE_ENV-only regressions that the dev server never surfaces.
 function previewProductionBuild() {
-	const electron = spawn("pnpm", ["exec", "electron", "."], {
-		stdio: ["inherit", "inherit", "pipe"],
-		env: {
-			...ENV,
-			// Native Wayland backend for correct devicePixelRatio — same reason dev sets it.
-			ELECTRON_OZONE_PLATFORM_HINT: "auto",
-			// Deliberately NOT setting ELECTRON_RENDERER_URL: its absence is what
-			// makes main.ts take the production (load-from-disk) branch.
-		},
+	const { cleanup, track } = installCleanup();
+	// Deliberately NOT setting ELECTRON_RENDERER_URL: its absence is what makes main.ts
+	// take the production (load-from-disk) branch.
+	const electron = spawnElectronFiltered(["."], {
+		...ENV,
+		ELECTRON_OZONE_PLATFORM_HINT: "auto", // native Wayland backend, same reason dev sets it
 	});
-
-	// Same boot/teardown noise filter as dev so the app's own logs stay visible.
-	const NOISE = /Fontconfig warning|wayland_event_watcher|libwayland:/;
-	let buf = "";
-	electron.stderr.on("data", (chunk) => {
-		buf += chunk;
-		const lines = buf.split("\n");
-		buf = lines.pop() ?? ""; // keep trailing partial line for next chunk
-		for (const line of lines) {
-			if (!NOISE.test(line)) process.stderr.write(line + "\n");
-		}
-	});
-
-	let cleaned = false;
-	const cleanup = () => {
-		if (cleaned) return;
-		cleaned = true;
-		if (!electron.killed) electron.kill();
-	};
-	process.on("exit", cleanup);
-	process.on("SIGINT", () => process.exit(0));
-	process.on("SIGTERM", () => process.exit(0));
+	track(electron);
 
 	electron.on("exit", (code) => {
-		if (buf && !NOISE.test(buf)) process.stderr.write(buf);
 		cleanup();
 		process.exit(code ?? 0);
 	});

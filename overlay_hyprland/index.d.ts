@@ -38,9 +38,6 @@ export declare function getClients(): Array<ClientInfo>
  */
 export declare function getCursorPos(): CursorPos
 
-/** All connected monitors, for clamping window geometry to the visible layout. */
-export declare function getMonitors(): Array<MonitorInfo>
-
 /**
  * True when running inside a Hyprland session (the IPC env vars are set).
  * Every other export fails cleanly when this is false — call it first and
@@ -48,33 +45,8 @@ export declare function getMonitors(): Array<MonitorInfo>
  */
 export declare function isHyprland(): boolean
 
-/**
- * One monitor, as reported by Hyprland (`hyprctl monitors`). `x`/`y` are the
- * monitor's origin in the global layout; `width`/`height` are physical pixels
- * (divide by `scale` for logical size).
- */
-export interface MonitorInfo {
-  id: number
-  name: string
-  x: number
-  y: number
-  width: number
-  height: number
-  scale: number
-  focused: boolean
-}
-
-/**
- * Moves the window by a delta in pixels (`movewindowpixel` dispatch).
- * Deltas avoid needing global cursor coordinates, which Wayland doesn't expose.
- */
-export declare function moveWindowBy(address: string, dx: number, dy: number): void
-
 /** Moves the window to an exact global position (`movewindowpixel exact`). */
 export declare function moveWindowTo(address: string, x: number, y: number): void
-
-/** Resizes the window by a delta in pixels (`resizewindowpixel` dispatch). */
-export declare function resizeWindowBy(address: string, dw: number, dh: number): void
 
 /** Resizes the window to an exact size (`resizewindowpixel exact`). */
 export declare function resizeWindowTo(address: string, width: number, height: number): void

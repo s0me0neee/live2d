@@ -54,7 +54,7 @@ export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.ma
 
 // The face worker posts nothing at all when MediaPipe finds no face (see face-worker.ts),
 // so "no result recently" covers a missing/denied camera, a dead worker AND a face that
-// left the frame, with no extra signalling. ~15 missed frames at detectFps 30.
+// left the frame, with no extra signalling. ~30 missed frames at the default detectFps 60.
 const FACE_STALE_MS = 500;
 
 // Smooths the selected target and writes parameters. Face params go on afterMotionUpdate
@@ -115,8 +115,10 @@ export function createRigDriver(
 	});
 
 	// Resolve each [gain] setting's physics-output params to their rest values once.
+	// Guarded like physics.ts's private-field digs: a runtime shape change here should
+	// disable gain scaling, not crash boot.
 	const restById = new Map(
-		(cm._model.parameters.ids as string[]).map(
+		((cm._model?.parameters?.ids as string[] | undefined) ?? []).map(
 			(id, index) => [id, cm.getParameterDefaultValue(index)] as const,
 		),
 	);

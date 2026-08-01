@@ -14,9 +14,8 @@ interface LoadedExpression {
 	checkbox?: HTMLInputElement;
 }
 
-// Independent outfit/face toggles: several can be on at once. Applied imperatively
-// on toggle (Cubism keeps the last written value) and reset to default on off.
-// On/off state is restored from, and persisted back into, the model's TOML.
+// Independent outfit/face toggles (several can be on at once), applied imperatively
+// and reset to default on off. On/off state round-trips through the model's TOML.
 export async function setupExpressions(
 	model: Live2DModel,
 	modelConfig: ModelConfig,

@@ -3,23 +3,12 @@ import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { Config } from "./config";
 import { clamp, type LookTarget } from "./rig";
 
-// Make the model watch the mouse, from either of two sources: pointer events while the
-// overlay is clickable, and — while it's click-through, when Wayland stops delivering
-// them entirely — the global cursor position main polls off the compositor. The two
-// never overlap, so both feed the same mapping.
-//
-// Only aims the shared look target; rig.ts owns the clamping, smoothing, body-follow and
-// parameter writing, so a cursor-driven head moves through exactly the same pipeline as a
-// webcam-driven one. The rig applies this only while face tracking has nothing to say.
-//
-// The handlers just record the raw position and a ticker callback filters it, rather than
-// filtering in the handlers: both input sources go silent once the mouse stops moving
-// (main skips unchanged poll samples), so a per-event filter would freeze partway through
-// a move and never reach the target — and its rate would vary with mouse speed.
-//
-// Hyprland-only: main answers `supported` false everywhere else, and never sends a
-// position. Off elsewhere rather than half-working, since the click-through case is the
-// whole point and no other compositor can serve it.
+// Make the model watch the mouse, from either of two sources that never overlap:
+// pointer events while clickable, and main's polled cursor while click-through. Only
+// aims the shared look target — rig.ts owns clamping/smoothing/writing, and applies
+// this only while face tracking has nothing to say. Filtering runs on the ticker (not
+// per event) since both sources go silent once the mouse stops, so a per-event filter
+// would freeze partway through a move. `supported` just reflects the config toggle.
 export async function setupCursorLook(
 	look: LookTarget,
 	app: PIXI.Application,
@@ -74,8 +63,8 @@ export async function setupCursorLook(
 	app.ticker.add(() => {
 		if (!seen) return; // no cursor seen yet — leave the model facing forward
 		// A time constant rather than a per-frame factor, so the feel doesn't change with
-		// renderFps. Clamped because lagMs <= 0 would otherwise overshoot or run away.
-		const k = clamp(1 - Math.exp(-app.ticker.deltaMS / lagMs), 0, 1);
+		// renderFps. lagMs <= 0 means instant (also avoids a 0/0 NaN when deltaMS is 0).
+		const k = lagMs <= 0 ? 1 : clamp(1 - Math.exp(-app.ticker.deltaMS / lagMs), 0, 1);
 		smoothX += (rawX - smoothX) * k;
 		smoothY += (rawY - smoothY) * k;
 		lookAt(smoothX, smoothY);

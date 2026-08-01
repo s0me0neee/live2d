@@ -109,6 +109,13 @@ async function startDetectionWorker(track: MediaStreamTrack, config: Config): Pr
 	return worker;
 }
 
+// Shared deadzone → normalize → curve → gain shaping, used for both eyelid-close and
+// jaw-open below.
+function shape(raw: number, deadzone: number, max: number, curve: number, gain: number): number {
+	const d = clamp((raw - deadzone) / (max - deadzone || 1), 0, 1);
+	return Math.pow(d, curve) * gain;
+}
+
 function mapResult(
 	res: FaceResult,
 	out: Rig,
@@ -145,27 +152,18 @@ function mapResult(
 		out.angleZ = -(roll - cal.roll) * ms * headGain;
 	}
 
-	// Eyes — mirror-swap so it reads like a mirror. Blink is shaped like the jaw:
-	// deadzone drops eyelid jitter, the curve reshapes partial blinks, gain scales
-	// the close amount.
+	// Eyes — mirror-swap so it reads like a mirror. Blink is shaped like the jaw below:
+	// deadzone drops jitter near rest, curve reshapes the partial range, gain scales it.
 	let blinkL = v("eyeBlinkLeft");
 	let blinkR = v("eyeBlinkRight");
 	if (mirror) [blinkL, blinkR] = [blinkR, blinkL];
-	const closeAmount = (raw: number) => {
-		const d = clamp((raw - ec.deadzone) / (1 - ec.deadzone), 0, 1);
-		return Math.pow(d, ec.curve) * ec.gain;
-	};
-	out.eyeLOpen = clamp(1 - closeAmount(blinkL), 0, 2);
-	out.eyeROpen = clamp(1 - closeAmount(blinkR), 0, 2);
+	out.eyeLOpen = clamp(1 - shape(blinkL, ec.deadzone, 1, ec.curve, ec.gain), 0, 1);
+	out.eyeROpen = clamp(1 - shape(blinkR, ec.deadzone, 1, ec.curve, ec.gain), 0, 1);
 
-	// Gaze and mouth-open come from landmark geometry, not blendshapes — jawOpen and
-	// eyeLookIn/Out/Up/Down both misread under head pitch (e.g. jawOpen falsely fires
-	// when looking down), whereas these are direct measurements off the face mesh.
-	// mouthOpenRatio specifically is defined entirely in 3D landmark space (see
-	// face-geometry.ts) so it's invariant to head rotation on all three axes, not just
-	// pitch.
-	// Guarded like the head-pose matrix above: if landmarks are missing this frame,
-	// leave these Rig fields at their previous value rather than snapping to 0.
+	// Gaze and mouth-open come from landmark geometry, not blendshapes: jawOpen and
+	// eyeLookIn/Out/Up/Down both misread under head pitch, where these direct mesh
+	// measurements don't (mouthOpenRatio is fully 3D — see face-geometry.ts). If
+	// landmarks are missing this frame, leave these Rig fields at their previous value.
 	if (res.landmarks) {
 		const lm = res.landmarks;
 
@@ -180,10 +178,8 @@ function mapResult(
 		out.eyeBallX = gx * ec.gazeGain;
 		out.eyeBallY = gy * ec.gazeGain;
 
-		// Deadzone kills closed-mouth jitter; curve reshapes; gain scales the result.
 		const ratio = mouthOpenRatio(lm);
-		const d = clamp((ratio - jc.deadzone) / (jc.openMax - jc.deadzone || 1), 0, 1);
-		out.mouthOpen = clamp(Math.pow(d, jc.curve) * jc.gain, 0, 1);
+		out.mouthOpen = clamp(shape(ratio, jc.deadzone, jc.openMax, jc.curve, jc.gain), 0, 1);
 	}
 	out.mouthForm = clamp((v("mouthSmileLeft") + v("mouthSmileRight")) / 2, 0, 1);
 

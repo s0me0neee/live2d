@@ -1,7 +1,8 @@
-import { app, BrowserWindow } from "electron";
+import { BrowserWindow } from "electron";
 import { join } from "node:path";
 import { forwardConsole } from "./forward-console";
 import { createLogger } from "./log";
+import { focusWindow } from "./window-utils";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 const log = createLogger("settings");
@@ -11,7 +12,7 @@ let settingsWin: BrowserWindow | null = null;
 
 export function openSettings(): void {
 	if (settingsWin && !settingsWin.isDestroyed()) {
-		focus(settingsWin);
+		focusWindow(settingsWin);
 		return;
 	}
 
@@ -37,19 +38,11 @@ export function openSettings(): void {
 	win.on("closed", () => {
 		settingsWin = null;
 	});
-	win.once("ready-to-show", () => focus(win));
+	win.once("ready-to-show", () => focusWindow(win));
 
 	if (DEV_URL) {
 		win.loadURL(`${DEV_URL}/settings.html`);
 	} else {
 		win.loadFile(join(__dirname, "../dist/settings.html"));
 	}
-}
-
-// The app runs as an accessory (LSUIElement), so steal activation to make the
-// window key — otherwise its inputs can't receive the keystrokes to capture.
-function focus(win: BrowserWindow): void {
-	if (process.platform === "darwin") app.focus({ steal: true });
-	win.show();
-	win.focus();
 }

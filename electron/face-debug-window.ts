@@ -1,7 +1,8 @@
-import { app, BrowserWindow } from "electron";
+import { BrowserWindow } from "electron";
 import { join } from "node:path";
 import { forwardConsole } from "./forward-console";
 import { createLogger } from "./log";
+import { focusWindow } from "./window-utils";
 import type { FaceResult } from "../src/face-worker";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
@@ -12,7 +13,7 @@ let debugWin: BrowserWindow | null = null;
 
 export function openFaceDebug(): void {
 	if (debugWin && !debugWin.isDestroyed()) {
-		focus(debugWin);
+		focusWindow(debugWin);
 		return;
 	}
 
@@ -39,7 +40,7 @@ export function openFaceDebug(): void {
 	win.on("closed", () => {
 		debugWin = null;
 	});
-	win.once("ready-to-show", () => focus(win));
+	win.once("ready-to-show", () => focusWindow(win));
 
 	if (DEV_URL) {
 		win.loadURL(`${DEV_URL}/face-debug.html`);
@@ -51,10 +52,4 @@ export function openFaceDebug(): void {
 // Called for every detection result; no-ops (cheap) when the window isn't open.
 export function sendFaceDebugData(result: FaceResult): void {
 	if (debugWin && !debugWin.isDestroyed()) debugWin.webContents.send("face-debug:data", result);
-}
-
-function focus(win: BrowserWindow): void {
-	if (process.platform === "darwin") app.focus({ steal: true });
-	win.show();
-	win.focus();
 }

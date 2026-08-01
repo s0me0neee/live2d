@@ -124,6 +124,12 @@ are in the tree today; **last reconciled against the code on 2026-07-30**.
       untrustworthy on Wayland) — debounced on `resize` and synchronously on quit —
       and is restored on launch by dispatching `resizeWindowTo`/`moveWindowTo` once
       the window maps (§4.3). (`electron/main.ts`)
+- [x] **Cursor look-at off Hyprland** — `cursor:supported` no longer gates on
+      `IS_LINUX && onHyprland()`, just the config toggle: the pointer-event path never
+      needed compositor support, and `startCursorPoll` now has a working source on
+      every platform (Hyprland's own `hyprctl cursorpos` query on Hyprland, Electron's
+      `screen.getCursorScreenPoint()` + `win.getBounds()` everywhere else). macOS/
+      Windows get the same click-through mouse-follow Hyprland had. (`electron/main.ts`)
 
 ## Next up (ordered)
 
@@ -165,16 +171,7 @@ reload) rather than live re-apply.
 **Phasing:** (1) read-only render of model/lock/gain/expressions from `getConfig()` →
 (2) writes + `config:changed` + overlay apply handles → (3) model picker → reload.
 
-### 2. Cursor look-at off Hyprland (small)
-
-`cursor:supported` returns `IS_LINUX && onHyprland() && cursorLook.enabled`, which
-gates the *whole* feature — including the plain `globalpointermove` path, which needs
-no compositor support at all. Combined with `automator.autoFocus = false` being
-unconditional, **macOS/Windows currently have no mouse-follow whatsoever**. The fix
-is to let the pointer-event source run everywhere and keep only the polled source
-Hyprland-gated (the ticker filter and mapping are already source-agnostic).
-
-### 3. Packaging / release
+### 2. Packaging / release
 
 `scripts/release.mjs` shells out to **electron-builder, which is neither installed
 nor configured** (no `build` block in `package.json`), so `pnpm release` can't work
@@ -184,7 +181,7 @@ paths over `web2dmodel://` rather than served from the project root — what act
 needs deciding is whether a packaged build ships models at all or keeps pointing at
 the user's own dirs.
 
-### 4. Beyond Hyprland (later) — see §4.6
+### 3. Beyond Hyprland (later) — see §4.6
 
 ## Linux overlay (Hyprland-first) — reference record
 

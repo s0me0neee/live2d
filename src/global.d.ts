@@ -8,6 +8,7 @@ declare global {
 		PIXI: typeof PIXI;
 		electronAPI?: {
 			platform: NodeJS.Platform;
+			isWayland: boolean;
 			getConfig(): Promise<ResolvedConfig>;
 			reportPos(pos: Pos): void;
 			setExpression(name: string, active: boolean): Promise<void>;

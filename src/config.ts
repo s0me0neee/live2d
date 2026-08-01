@@ -42,10 +42,12 @@ export interface Config {
 	hyprlandAutoBind: boolean;
 
 	// Make the model watch the mouse when face tracking has nothing to say (no camera,
-	// or no face in frame). Linux/Hyprland only: while click-through the window gets no
-	// pointer events at all, so the compositor is polled for the global cursor at
-	// detectFps instead. Feeds the same rig as face tracking, so headClampDeg,
-	// smoothing and bodyFollow all apply on top of these.
+	// or no face in frame). While click-through the window gets no pointer events at
+	// all, so main polls the global cursor at detectFps instead — works everywhere
+	// (Electron's `screen` API on macOS/Windows/X11, hyprctl on Hyprland) except a
+	// non-Hyprland Wayland session, which has no portable cursor source. Feeds the same
+	// rig as face tracking, so headClampDeg, smoothing and bodyFollow all apply on top
+	// of these.
 	cursorLook: {
 		enabled: boolean;
 		range: number; // cursor distance for full deflection, in model heights

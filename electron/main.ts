@@ -5,6 +5,7 @@ import {
 	ipcMain,
 	Menu,
 	nativeImage,
+	screen,
 	session,
 	Tray,
 } from "electron";
@@ -12,6 +13,7 @@ import { join, sep } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { applyMacOverlay } from "./mac-overlay";
+import { IS_WAYLAND } from "./platform";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
 import { openSettings } from "./settings-window";
@@ -27,41 +29,32 @@ import {
 	loadWindowBoundsSync,
 	savePosSync,
 	saveUiToggle,
-	saveWindowBounds,
 	saveWindowBoundsSync,
 	setExpressionActive,
 	setHotkey,
 	type UiToggle,
 } from "./config";
 import { DEFAULT_CONFIG, type HotkeyId, type Pos, type WindowBounds } from "../src/config";
+import type { Shortcut } from "@web2d/global-hotkey";
+import type { ClientInfo, CursorPos, WindowRule } from "@web2d/overlay_hyprland";
 
 const DEV_URL = process.env.ELECTRON_RENDERER_URL;
 // __dirname is a native global in the bundled CommonJS output (dist-electron/).
 
 const log = createLogger("main");
 
-// The OS-window move/resize guide is disabled on Linux: a Wayland client can't
-// self-position, so the guide's setBounds-based drag can't work (the window is created
-// `resizable` for native resize instead). Window locking (click-through) IS enabled on
-// Linux — the portal lock hotkey and the tray Lock item both give a way back out of
-// click-through, so it can no longer strand the overlay. Gated on `linux` specifically;
-// macOS/Windows keep the guide.
-const IS_LINUX = process.platform === "linux";
+// The renderer's move/resize guide is Wayland-disabled (Wayland can't self-position);
+// window locking stays enabled there since the portal hotkey + tray Lock item are a
+// way back out of click-through. X11 gets the same guide/native-hotkey path as macOS.
 
-// Use the native Wayland Ozone backend on Linux instead of falling back to XWayland.
-// Under XWayland, Chromium derives devicePixelRatio from the X font DPI (e.g. 1.047
-// here) rather than the compositor's real scale, so the page lays out wider than the
-// actual window surface and right/bottom-anchored UI renders off the window edge. The
-// native backend reports the true scale and the correct window coordinates. Must be
-// set before `whenReady`. GlobalShortcutsPortal makes globalShortcut work on Wayland.
-if (IS_LINUX) {
+// Native Wayland Ozone backend, not XWayland: XWayland derives devicePixelRatio from
+// X font DPI rather than the compositor's real scale, mis-sizing the page. Must be set
+// before `whenReady`.
+if (IS_WAYLAND) {
 	app.commandLine.appendSwitch("ozone-platform-hint", "auto");
 	app.commandLine.appendSwitch("enable-features", "GlobalShortcutsPortal");
-	// Pin devicePixelRatio to 1. On this Wayland session Chromium derives a 1.046875
-	// scale despite the compositor reporting scale 1.0, so it renders a buffer ~4.7%
-	// wider than the window and clips the surplus on the right/bottom — which pushed
-	// the right-anchored expression panel off the window edge. (A HiDPI monitor at a
-	// real >1 compositor scale would want this removed.)
+	// This Wayland session reports devicePixelRatio 1.046875 despite compositor scale
+	// 1.0, clipping right/bottom-anchored UI. Pin to 1 until a real HiDPI monitor needs it.
 	app.commandLine.appendSwitch("force-device-scale-factor", "1");
 }
 
@@ -126,7 +119,7 @@ ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
 ipcMain.handle("config:get-hotkey", (_e, id: HotkeyId) => (id in hotkeys ? hotkeys[id] : ""));
 ipcMain.handle("config:set-hotkey", async (_e, id: HotkeyId, accelerator: string) => {
 	if (typeof accelerator !== "string" || !(id in hotkeys)) return false;
-	if (IS_LINUX) {
+	if (IS_WAYLAND) {
 		// The portal shortcut id is bound once at startup; the accelerator is only an
 		// advisory preferredTrigger there. But when hyprlandAutoBind is on we drive the
 		// real key via the compositor keyword IPC, so a change can take effect live.
@@ -151,17 +144,15 @@ let winSaveTimer: ReturnType<typeof setTimeout> | undefined;
 function persistBounds(b: WindowBounds): void {
 	savedBounds = b;
 	clearTimeout(winSaveTimer); // a drag/resize floods updates; hit disk once it settles
-	winSaveTimer = setTimeout(() => {
-		saveWindowBounds(b).catch((e) => log.warn("save window bounds failed:", e));
-	}, 400);
+	winSaveTimer = setTimeout(() => saveWindowBoundsSync(b), 400);
 }
 
-// The renderer's move/resize guide drives the OS window through these. Off on Linux —
-// the renderer guide is disabled there (Wayland can't self-position); the window is
-// created `resizable` instead and native resizes persist via the `resize` listener in
-// createWindow. macOS and Windows keep the guide.
+// The renderer's move/resize guide drives the OS window through these. Off on
+// Wayland — the renderer guide is disabled there (Wayland can't self-position); the
+// window is created `resizable` instead and native resizes persist via the `resize`
+// listener in createWindow. macOS, Windows and X11 Linux keep the guide.
 function registerWindowIpc(): void {
-	if (IS_LINUX) return;
+	if (IS_WAYLAND) return;
 	ipcMain.handle("window:get-bounds", (): WindowBounds | null => {
 		const win = overlayWindow();
 		return win && !win.isDestroyed() ? win.getBounds() : null;
@@ -170,6 +161,7 @@ function registerWindowIpc(): void {
 	ipcMain.on("window:set-bounds", (_e, b: WindowBounds) => {
 		const win = overlayWindow();
 		if (!win || win.isDestroyed()) return;
+		if (![b.x, b.y, b.width, b.height].every(Number.isFinite)) return; // malformed payload
 		const rect: WindowBounds = {
 			x: Math.round(b.x),
 			y: Math.round(b.y),
@@ -193,11 +185,9 @@ function setOverlayLock(win: BrowserWindow, locked: boolean): void {
 	// forward:true still delivers mousemove (for hover) while clicks pass through — but
 	// it's macOS/Windows-only, so hover reactions while locked are lost on Linux/Wayland.
 	win.setIgnoreMouseEvents(locked, { forward: true });
-	if (IS_LINUX) {
-		applyHyprlandLock(locked); // toggle the no-focus/border/blur overlay rules
-		if (locked) startCursorPoll(win);
-		else stopCursorPoll();
-	}
+	if (onHyprland()) applyHyprlandLock(locked); // toggle the no-focus/border/blur overlay rules
+	if (locked) startCursorPoll(win);
+	else stopCursorPoll();
 	win.webContents.send("overlay:lock-changed", locked);
 	refreshTrayMenu();
 	log.info(`overlay ${locked ? color.yellow("locked (click-through)") : color.green("unlocked (clickable)")}`);
@@ -260,47 +250,27 @@ function applyHotkey(id: HotkeyId, accelerator: string): boolean {
 	return true;
 }
 
-// Linux global hotkeys go through the XDG GlobalShortcuts portal (Electron's
-// globalShortcut can't: it never declares an app id to the portal, so the compositor
-// rejects its session). We drive the portal from the `global_hotkey` native module,
-// which registers shortcut *ids*; the user binds real keys in the compositor config
-// (e.g. hyprland.conf: `bind = CTRL ALT, R, global, web2d:recenter`), or lets
-// hyprlandAutoBind drive `overlay_hyprland.setKeyword("bind", …)`. The config
-// accelerator is only an advisory `preferredTrigger` — compositors like Hyprland ignore
-// it. Both `lock` and `recenter` are registered.
+// On Wayland, global hotkeys go through the XDG GlobalShortcuts portal — Electron's
+// globalShortcut never declares an app id, so the compositor rejects its session (X11
+// has no such restriction, so it keeps using globalShortcut directly). The
+// `global_hotkey` native module registers shortcut *ids*; the user binds real keys
+// in hyprland.conf (`bind = CTRL ALT, R, global, web2d:recenter`) or via
+// hyprlandAutoBind. The config accelerator is only an advisory `preferredTrigger`.
 const PORTAL_APP_ID = "web2d";
 
 interface GlobalHotkeyModule {
-	start(
-		appId: string,
-		shortcuts: { id: string; description: string; preferredTrigger: string }[],
-		onActivated: (err: Error | null, id: string) => void,
-	): void;
+	start(appId: string, shortcuts: Shortcut[], onActivated: (err: Error | null, id: string) => void): void;
 }
 
 // Runtime compositor control (Hyprland). `setKeyword` is the reply-checked `hyprctl
 // keyword` equivalent over the IPC socket; `setWindowRules` applies dynamic
 // `windowrule[<name>]:<prop> <value>` keywords (value "unset" clears one).
-interface WindowRule {
-	prop: string;
-	value: string;
-}
-interface HyprlandClient {
-	address: string;
-	pid: number;
-	class: string;
-	title: string;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
 interface OverlayHyprlandModule {
 	isHyprland(): boolean;
 	setKeyword(key: string, value: string): void;
 	setWindowRules(name: string, rules: WindowRule[]): void;
-	getClients(): HyprlandClient[];
-	getCursorPos(): { x: number; y: number };
+	getClients(): ClientInfo[];
+	getCursorPos(): CursorPos;
 	moveWindowTo(address: string, x: number, y: number): void;
 	resizeWindowTo(address: string, width: number, height: number): void;
 }
@@ -333,12 +303,9 @@ function onHyprland(): boolean {
 	return isHyprlandSession;
 }
 
-// The Linux analogue of applyMacOverlay, via `windowrule[web2d]:…`. Split like the mac
-// path: BASE is always on (applied at startup), LOCK is the no-focus overlay behaviour
-// toggled with the lock — so unlocked the window is a normal focusable, bordered,
-// movable window and locked it's a click-through overlay. `float` and `pin` live in BASE
-// and are never toggled: the overlay is always floating (a tiled overlay couldn't be
-// freely moved) and always pinned across workspaces, whether locked or not.
+// The Linux analogue of applyMacOverlay, via `windowrule[web2d]:…`. BASE (float/pin/
+// opacity) applies once at startup and is never toggled; LOCK is the no-focus overlay
+// behavior toggled with click-through.
 const HYPRLAND_RULE_SELECTOR = "web2d";
 const HYPRLAND_BASE_RULES: WindowRule[] = [
 	{ prop: "opacity", value: "1.0 override 1.0 override 1.0 override" },
@@ -402,7 +369,7 @@ function applyHyprlandLock(locked: boolean): void {
 // Wayland connection, so Hyprland reports our windows under process.pid; the settings
 // window shares that pid but has a distinct title ("web2d settings"), so match the
 // overlay by its exact title.
-function overlayHyprlandClient(): HyprlandClient | null {
+function overlayHyprlandClient(): ClientInfo | null {
 	const h = hyprland();
 	if (!h) return null;
 	try {
@@ -441,22 +408,27 @@ function restoreLinuxBounds(): void {
 	tryRestore();
 }
 
-// Click-through means Wayland delivers no pointer events at all (setIgnoreMouseEvents'
-// forward:true is macOS/Windows-only, and HYPRLAND_LOCK_RULES sets no_follow_mouse), so
-// the renderer can't see where the mouse is. Poll the compositor instead and hand it
-// window-local coordinates; unlocked, ordinary pointer events take over and this stops.
+// Click-through means the renderer gets no pointer events at all (Wayland's
+// no_follow_mouse, or forward:true's hover only covering the small overlay window), so
+// poll the OS cursor instead and hand the renderer window-local coordinates. Hyprland
+// gets its own cursor+geometry source (hyprctl over the native module) because Wayland
+// hides the global cursor from Electron's `screen` API off that compositor's own
+// protocol — which is also why this stays off entirely on non-Hyprland Wayland (X11
+// still gets it via `screen`, same as macOS/Windows).
 const CURSOR_GEOMETRY_MS = 500; // the overlay rarely moves, so don't re-read it per tick
 
 let cursorTimer: ReturnType<typeof setInterval> | undefined;
 
 function startCursorPoll(win: BrowserWindow): void {
-	if (cursorTimer || !onHyprland()) return;
+	if (cursorTimer) return;
+	if (IS_WAYLAND && !onHyprland()) return; // no portable cursor source off Hyprland on Wayland
 	const { enabled, fps } = loadCursorLookSync();
 	if (!enabled) return;
-	const h = hyprland();
-	if (!h) return;
+	const useHyprland = onHyprland();
+	const h = useHyprland ? hyprland() : null;
+	if (useHyprland && !h) return;
 
-	let geometry: HyprlandClient | null = null;
+	let geometry: { x: number; y: number } | null = null;
 	let geometryAt = 0;
 	let lastX = NaN;
 	let lastY = NaN;
@@ -465,16 +437,16 @@ function startCursorPoll(win: BrowserWindow): void {
 		if (win.isDestroyed()) return stopCursorPoll();
 		const now = Date.now();
 		if (now - geometryAt > CURSOR_GEOMETRY_MS) {
-			geometry = overlayHyprlandClient();
+			geometry = useHyprland ? overlayHyprlandClient() : win.getBounds();
 			geometryAt = now;
 		}
 		if (!geometry) return;
 
 		let cursor: { x: number; y: number };
 		try {
-			cursor = h.getCursorPos();
+			cursor = useHyprland ? h!.getCursorPos() : screen.getCursorScreenPoint();
 		} catch (e) {
-			log.warn(`hyprland cursorpos failed, cursor look off: ${(e as Error).message}`);
+			log.warn(`cursor poll failed, cursor look off: ${(e as Error).message}`);
 			return stopCursorPoll();
 		}
 		if (cursor.x === lastX && cursor.y === lastY) return; // an idle cursor costs no IPC
@@ -483,7 +455,7 @@ function startCursorPoll(win: BrowserWindow): void {
 		win.webContents.send("cursor:pos", { x: cursor.x - geometry.x, y: cursor.y - geometry.y });
 	}, Math.round(1000 / Math.max(1, fps)));
 
-	log.debug(`cursor look polling at ${fps}fps`);
+	log.debug(`cursor look polling at ${fps}fps${useHyprland ? " (hyprland)" : ""}`);
 }
 
 function stopCursorPoll(): void {
@@ -526,12 +498,14 @@ function ensureDesktopEntry(): void {
 	}
 }
 
-// Electron accelerator → portal trigger string ("CommandOrControl+Alt+R" → "CTRL+ALT+r").
-// Advisory only (Hyprland ignores it), so best-effort is fine.
-function toPortalTrigger(accelerator: string): string {
-	if (!accelerator) return "";
+// Shared by the portal-trigger and Hyprland-bind formatters below: splits an Electron
+// accelerator into its modifier keywords and main key, e.g. "CommandOrControl+Alt+R" →
+// mods ["CTRL", "ALT"], key "R".
+function splitAccelerator(accelerator: string): { mods: string[]; key: string } | null {
+	if (!accelerator) return null;
 	const parts = accelerator.split("+");
-	const key = (parts.pop() ?? "").toLowerCase();
+	const key = parts.pop();
+	if (!key) return null;
 	const mods = parts.map((m) => {
 		switch (m.toLowerCase()) {
 			case "commandorcontrol":
@@ -553,7 +527,14 @@ function toPortalTrigger(accelerator: string): string {
 				return m.toUpperCase();
 		}
 	});
-	return [...mods, key].join("+");
+	return { mods, key };
+}
+
+// Portal trigger string ("CommandOrControl+Alt+R" → "CTRL+ALT+r"). Advisory only
+// (Hyprland ignores it), so best-effort is fine.
+function toPortalTrigger(accelerator: string): string {
+	const split = splitAccelerator(accelerator);
+	return split ? [...split.mods, split.key.toLowerCase()].join("+") : "";
 }
 
 function startLinuxGlobalShortcuts(): void {
@@ -612,6 +593,7 @@ function startLinuxGlobalShortcuts(): void {
 const hyprlandBoundCombos: Partial<Record<HotkeyId, string>> = {};
 
 function applyHyprlandBind(id: HotkeyId, accelerator: string): void {
+	if (!onHyprland()) return; // hyprlandAutoBind is a no-op off a real Hyprland session
 	const combo = toHyprlandCombo(accelerator);
 	if (!combo) {
 		log.warn(`hyprland auto-bind: could not derive a bind combo from "${accelerator}"`);
@@ -629,34 +611,10 @@ function applyHyprlandBind(id: HotkeyId, accelerator: string): void {
 	}
 }
 
-// Electron accelerator → hyprctl bind combo ("CommandOrControl+Alt+R" → "CTRL ALT, R").
+// hyprctl bind combo ("CommandOrControl+Alt+R" → "CTRL ALT, R").
 function toHyprlandCombo(accelerator: string): string | null {
-	if (!accelerator) return null;
-	const parts = accelerator.split("+");
-	const key = parts.pop();
-	if (!key) return null;
-	const mods = parts.map((m) => {
-		switch (m.toLowerCase()) {
-			case "commandorcontrol":
-			case "cmdorctrl":
-			case "control":
-			case "ctrl":
-			case "command":
-			case "cmd":
-				return "CTRL";
-			case "alt":
-			case "option":
-				return "ALT";
-			case "shift":
-				return "SHIFT";
-			case "super":
-			case "meta":
-				return "SUPER";
-			default:
-				return m.toUpperCase();
-		}
-	});
-	return `${mods.join(" ")}, ${key.toUpperCase()}`;
+	const split = splitAccelerator(accelerator);
+	return split ? `${split.mods.join(" ")}, ${split.key.toUpperCase()}` : null;
 }
 
 // UI toggles (FPS counter, expression list): persisted in config.toml and pushed to
@@ -693,12 +651,10 @@ function registerOverlayIpc(): void {
 		if (win) setOverlayLock(win, !overlayLocked);
 		return overlayLocked;
 	});
-	// Gates the renderer's own pointer-driven look-at too, so the whole feature stays
-	// Hyprland-only rather than Linux-generally (electronAPI.platform can't tell them apart).
-	ipcMain.handle(
-		"cursor:supported",
-		() => IS_LINUX && onHyprland() && loadCursorLookSync().enabled,
-	);
+	// The pointer-event path needs no OS/compositor support at all, and startCursorPoll
+	// always has a working source now (Hyprland native, or Electron's screen API
+	// elsewhere) — so this only needs to reflect the user's config toggle.
+	ipcMain.handle("cursor:supported", () => loadCursorLookSync().enabled);
 }
 
 function createWindow(): void {
@@ -722,9 +678,10 @@ function createWindow(): void {
 		closable: false,
 		minimizable: false,
 		maximizable: false,
-		// Linux needs a resizable window for the guide's setBounds to change its size;
-		// macOS keeps it false so AeroSpace's AX heuristic ignores the overlay.
-		resizable: IS_LINUX,
+		// Wayland has no renderer guide, so the window itself must be natively resizable;
+		// macOS/Windows/X11 keep it false so AeroSpace's AX heuristic ignores the overlay
+		// (and the guide drives resizing instead).
+		resizable: IS_WAYLAND,
 		fullscreenable: false,
 		focusable: false, // never steal focus from the app underneath
 		skipTaskbar: true,
@@ -745,22 +702,22 @@ function createWindow(): void {
 	win.on("show", () => applyMacOverlay(win));
 	win.on("blur", () => applyMacOverlay(win));
 
-	// Linux has no renderer guide; the window is natively resizable, so persist the
+	// Wayland has no renderer guide; the window is natively resizable, so persist the
 	// geometry on resize (debounced) to survive restart. Read it from the compositor,
 	// not win.getBounds() — on Wayland Electron's reported position isn't trustworthy.
-	if (IS_LINUX) {
+	if (IS_WAYLAND) {
 		win.on("resize", () => {
 			const c = overlayHyprlandClient();
 			if (c) persistBounds({ x: c.x, y: c.y, width: c.width, height: c.height });
 		});
-		win.on("closed", stopCursorPoll);
 	}
+	win.on("closed", stopCursorPoll);
 
 	win.once("ready-to-show", () => {
 		win.showInactive(); // show without taking focus
 		applyMacOverlay(win);
 		setOverlayLock(win, overlayLocked);
-		if (IS_LINUX) restoreLinuxBounds(); // Wayland ignores the window's creation x/y
+		if (IS_WAYLAND) restoreLinuxBounds(); // Wayland ignores the window's creation x/y
 	});
 
 	if (DEV_URL) {
@@ -852,7 +809,7 @@ app.whenReady().then(() => {
 	createWindow();
 
 	const saved = loadHotkeysSync();
-	if (IS_LINUX) {
+	if (IS_WAYLAND) {
 		Object.assign(hotkeys, saved); // reflect saved accelerators (config:get-hotkey, preferredTrigger)
 		startLinuxOverlayRules();
 		startLinuxGlobalShortcuts();
@@ -880,7 +837,7 @@ app.on("will-quit", () => {
 	// the debounced resize save in createWindow covers the geometry during the session.
 	clearTimeout(winSaveTimer);
 	stopCursorPoll();
-	if (IS_LINUX) {
+	if (IS_WAYLAND) {
 		const c = overlayHyprlandClient();
 		if (c) {
 			log.info(`saving window bounds ${color.gray(`${c.width}×${c.height} @ (${c.x},${c.y})`)}`);

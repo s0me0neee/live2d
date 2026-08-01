@@ -43,7 +43,10 @@ function setStatus(id: HotkeyId, text: string, kind: StatusKind = "info"): void 
 }
 
 function startRecording(id: HotkeyId, btn: HTMLButtonElement): void {
-	if (recording) recording.btn.classList.remove("recording");
+	if (recording) {
+		recording.btn.classList.remove("recording");
+		void restoreButton(recording.id, recording.btn);
+	}
 	recording = { id, btn };
 	btn.classList.add("recording");
 	btn.textContent = "press keys…";
@@ -53,6 +56,13 @@ function startRecording(id: HotkeyId, btn: HTMLButtonElement): void {
 function stopRecording(): void {
 	recording?.btn.classList.remove("recording");
 	recording = null;
+}
+
+// Relabels a button from its actual saved hotkey and clears its status — used both to
+// cancel the active recording (Escape) and to un-stick one preempted by another.
+async function restoreButton(id: HotkeyId, btn: HTMLButtonElement): Promise<void> {
+	btn.textContent = label(await api!.hotkey.get(id));
+	setStatus(id, "");
 }
 
 async function clearHotkey(id: HotkeyId): Promise<void> {
@@ -68,8 +78,7 @@ async function onKeyDown(e: KeyboardEvent): Promise<void> {
 
 	if (e.code === "Escape") {
 		stopRecording();
-		btn.textContent = label(await api!.hotkey.get(id));
-		setStatus(id, "");
+		await restoreButton(id, btn);
 		return;
 	}
 	if (e.code === "Backspace" || e.code === "Delete") {

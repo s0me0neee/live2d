@@ -43,13 +43,10 @@ function eyeGeometry(
 }
 
 // Per-eye iris offset from that eye's own socket bbox center, roughly in eye-widths
-// (not clamped). Raw signal only — callers must subtract their own neutral-gaze
-// baseline before treating this as "gaze direction" (the eye socket's bbox center
-// isn't where the iris naturally rests looking straight ahead — eyelid shape is
-// asymmetric and a webcam usually sits above eye level, both bias it) — and average
-// the two eyes themselves if a single combined value is needed; Cubism's
-// ParamEyeBallX/Y drives both eyes together, but that's a rig concern, not a
-// geometry one, so it isn't decided here.
+// (not clamped, no neutral baseline subtracted). Raw signal only: the bbox center is
+// biased off true "looking straight ahead" (asymmetric eyelid shape, webcam above eye
+// level), so callers must subtract their own captured baseline and average the eyes
+// themselves — a rig concern, not a geometry one.
 export function eyeOffsets(lm: NormalizedLandmark[], mirror: boolean): [EyeOffset, EyeOffset] {
 	return EYES.map(({ eye, iris }) => {
 		const g = eyeGeometry(lm, eye, iris);
@@ -82,31 +79,15 @@ const UPPER_INNER_LIP = 13;
 const LOWER_INNER_LIP = 14;
 
 // Mouth gap over interocular distance, both measured as full 3D landmark-space
-// distances rather than 2D image-plane ones. A previous version of this function
-// canceled head ROLL by projecting lip points onto a 2D axis that co-rotated with the
-// eye-line — correct for in-plane rotation, but still an image-plane projection, so
-// PITCH/YAW (out-of-plane rotation) still foreshortened it: turning the head shrank
-// the interocular denominator faster than the mouth-gap numerator (ratio inflates),
-// while tilting up/down foreshortened the near-vertical numerator directly (ratio
-// collapses) — exactly the asymmetric contamination this was rewritten to fix.
-// A 3D vertex-to-vertex distance on a rigid body is unchanged by any pure rotation, so
-// switching both sides of the ratio to 3D removes roll, pitch, and yaw contamination
-// at once — no axis-projection trick needed at all.
-// The interocular reference uses each eye's vertex-mean CENTROID, not a bounding-box
-// center: an AABB center isn't a fixed point on the mesh (which landmark is "extreme"
-// can itself shift as the head turns), which would reintroduce a smaller-scale version
-// of the same rotation artifact this rewrite removes. A centroid doesn't have that
-// problem. The mouth gap uses a single verified point pair (13/14) instead of the old
-// whole-lips-contour spread — simpler, and since 13/14 sit on the mouth's vertical
-// centerline it's naturally insensitive to lip-corner movement (smiling), improving on
-// the old approach's documented smile cross-talk.
-// Residual risk: this trades some noise robustness for the pose fix — landmark z is a
-// noisier monocular depth estimate than x/y, and a single point pair lacks the
-// averaging a ~40-point contour spread had. config.jaw.deadzone and the render-loop
-// smoothing are the intended mitigation. If live jitter (see face-debug's "mouth"
-// readout) proves that insufficient, the documented next step is averaging three
-// vertical pairs instead of one — this topology also has (82,87) and (312,317)
-// alongside (13,14) — but that's unverified and deliberately not implemented here.
+// distances (not 2D image-plane ones): a 3D vertex-to-vertex distance on a rigid body
+// is unchanged by any pure rotation, so this cancels roll/pitch/yaw contamination that
+// a 2D projection can't. The interocular reference uses each eye's vertex centroid
+// rather than a bbox center, since which landmark is "extreme" shifts as the head
+// turns and would reintroduce a smaller-scale version of the same rotation artifact.
+// Trade-off: landmark z is noisier than x/y, and this single point pair lacks the
+// averaging a whole-contour spread had — config.jaw.deadzone and render-loop smoothing
+// are the intended mitigation; averaging the (82,87)/(312,317) pairs too is the next
+// step if live jitter (face-debug's "mouth" readout) proves that insufficient.
 export function mouthOpenRatio(lm: NormalizedLandmark[]): number {
 	const left = centroid3(lm, LEFT_EYE_INDICES);
 	const right = centroid3(lm, RIGHT_EYE_INDICES);

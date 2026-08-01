@@ -1,5 +1,6 @@
 import type { WebContents } from "electron";
 import pc from "picocolors";
+import { timestamp } from "./log";
 
 // Electron 42's console-message `details.level` is a string: verbose|info|warning|error.
 const LEVEL: Record<string, { label: string; color: (s: string) => string; stream: NodeJS.WriteStream }> = {
@@ -8,8 +9,6 @@ const LEVEL: Record<string, { label: string; color: (s: string) => string; strea
 	warning: { label: "WARN", color: pc.yellow, stream: process.stderr },
 	error: { label: "ERR ", color: pc.red, stream: process.stderr },
 };
-
-const timestamp = () => pc.gray(new Date().toTimeString().slice(0, 8));
 
 // Mirror a renderer's console output (logs, warnings, errors) to the main process's
 // stdout/stderr so it shows in the terminal — by default it only reaches devtools.

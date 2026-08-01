@@ -71,13 +71,6 @@ export function loadWindowBoundsSync(): WindowBounds | null {
 	return parseBounds(readLocalStateSync().window);
 }
 
-// Async only to match its debounced caller; local.toml is tiny, so the write is sync.
-export async function saveWindowBounds(bounds: WindowBounds): Promise<void> {
-	saveWindowBoundsSync(bounds);
-}
-
-// The quit path (will-quit) can't await; on Linux the final geometry is read from the
-// compositor there.
 export function saveWindowBoundsSync(bounds: WindowBounds): void {
 	try {
 		const state = readLocalStateSync();
@@ -116,7 +109,7 @@ export async function setHotkey(id: HotkeyId, accelerator: string): Promise<void
 	await writeToml(configFile, root);
 }
 
-// Read synchronously so the Linux global-shortcut setup runs in the launch tick.
+// Read synchronously so the Wayland global-shortcut setup runs in the launch tick.
 export function loadHyprlandAutoBindSync(): boolean {
 	try {
 		const root = parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
@@ -221,11 +214,9 @@ async function loadModel(name: string): Promise<ModelConfig> {
 
 	const loadable = isModelLoadable(model);
 
-	// Persist discovered gain settings + expressions back into an EXISTING file only,
-	// and only when the model actually loaded. A failed load (e.g. the model was moved
-	// out of `location`) yields empty discovery; writing that back would wipe the
-	// user's saved gain/expressions. Also never create a file for a missing/invalid
-	// model name — that just litters the models dir.
+	// Only write back to an existing, loadable model: a failed load (e.g. moved out of
+	// `location`) yields empty discovery, and persisting that would wipe the user's
+	// saved gain/expressions.
 	const changed =
 		keysChanged(savedGain, model.gain) || keysChanged(savedExpressions, model.expressions);
 	if (existed && loadable && changed) {

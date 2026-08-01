@@ -1,4 +1,4 @@
-model = "jk_black_cat_linux"
+model = "k"
 mirror = true
 smoothing = 0.6
 headGain = 1.05
@@ -9,7 +9,7 @@ renderFps = 100
 detectFps = 35
 lockHotkey = "CommandOrControl+Shift+Z"
 showFps = false
-showExpressions = false
+showExpressions = true
 hyprlandAutoBind = true
 recenterHotkey = "CommandOrControl+Shift+R"
 
