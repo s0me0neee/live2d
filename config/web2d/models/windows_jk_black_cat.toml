@@ -1,0 +1,209 @@
+location = "C:\\Users\\Administrator\\Documents\\live2dModels\\jk黑猫"
+model = "jk盐.model3.json"
+
+[gain]
+RR = 1
+Z = 1
+"头发物理y" = 1
+"头发物理xz" = 1
+Y = 1
+"ZCT(2)" = 1
+"ZCT(蝴蝶结" = 1
+"ZCT(蝴蝶结(2)" = 1
+"YCT(项圈的" = 1
+"YCT(蝴蝶结" = 1
+"YCT(2)" = 1
+"z眨眼" = 1
+"y眨眼" = 1
+"身体乳摇x" = 1
+xyjm = 1
+ZED = 1
+YED = 1
+"下腿-X-xyz" = 1
+"下腿-Z-XYZ" = 1
+TZ = 1
+"笑眼联动" = 1
+"眉眼嘴联动(y" = 1
+"眉眼嘴联动(z" = 1
+"嘴脸duang" = 1
+"真身体x" = 1
+"真身体y" = 1
+"真身体z" = 1
+"表情眼" = 1
+weiba = 1
+"weiba(2)" = 1
+
+[expressions."兽尾-隐藏1"]
+file = "兽尾-隐藏1.exp3.json"
+key = "1"
+active = false
+
+[expressions."兽尾-隐藏2"]
+file = "兽尾-隐藏2.exp3.json"
+key = "2"
+active = false
+
+[expressions."兽耳-隐藏"]
+file = "兽耳-隐藏.exp3.json"
+key = "3"
+active = false
+
+[expressions."前发-去掉半透"]
+file = "前发-去掉半透.exp3.json"
+key = "4"
+active = false
+
+[expressions."后发-右小啾啾隐藏"]
+file = "后发-右小啾啾隐藏.exp3.json"
+key = "5"
+active = false
+
+[expressions."后发-左小啾啾隐藏"]
+file = "后发-左小啾啾隐藏.exp3.json"
+key = "6"
+active = false
+
+[expressions."后发-长发隐藏"]
+file = "后发-长发隐藏.exp3.json"
+key = "7"
+active = false
+
+[expressions."吐舌（也可被ios或vb面捕使用）"]
+file = "吐舌（也可被ios或vb面捕使用）.exp3.json"
+key = "8"
+active = false
+
+[expressions."嘴-平静v形（不可张开"]
+file = "嘴-平静v形（不可张开.exp3.json"
+key = "9"
+active = false
+
+[expressions."帽子隐藏"]
+file = "帽子隐藏.exp3.json"
+key = "0"
+active = false
+
+[expressions."手-手提包隐藏"]
+file = "手-手提包隐藏.exp3.json"
+key = ""
+active = false
+
+[expressions."手-抱猫"]
+file = "手-抱猫.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-右眼粉瞳色"]
+file = "眼-右眼粉瞳色.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-哭哭"]
+file = "眼-哭哭.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-左眼粉瞳色"]
+file = "眼-左眼粉瞳色.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-平静死鱼眼"]
+file = "眼-平静死鱼眼.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-星星眼"]
+file = "眼-星星眼.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-泪眼汪汪"]
+file = "眼-泪眼汪汪.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-爱心眼"]
+file = "眼-爱心眼.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-生气"]
+file = "眼-生气.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-眩晕流汗"]
+file = "眼-眩晕流汗.exp3.json"
+key = ""
+active = false
+
+[expressions."眼-眼镜"]
+file = "眼-眼镜.exp3.json"
+key = ""
+active = false
+
+[expressions."眼影隐藏"]
+file = "眼影隐藏.exp3.json"
+key = ""
+active = false
+
+[expressions."肩发-位置收拢"]
+file = "肩发-位置收拢.exp3.json"
+key = ""
+active = false
+
+[expressions."肩发-缩小~隐藏"]
+file = "肩发-缩小~隐藏.exp3.json"
+key = ""
+active = false
+
+[expressions."脸-绷带-血隐藏"]
+file = "脸-绷带-血隐藏.exp3.json"
+key = ""
+active = false
+
+[expressions."脸-绷带和血一起隐藏"]
+file = "脸-绷带和血一起隐藏.exp3.json"
+key = ""
+active = false
+
+[expressions."脸红-痴汉嘴（兼容吐舌"]
+file = "脸红-痴汉嘴（兼容吐舌.exp3.json"
+key = ""
+active = false
+
+[expressions."脸红"]
+file = "脸红.exp3.json"
+key = ""
+active = false
+
+[expressions."脸红2隐藏"]
+file = "脸红2隐藏.exp3.json"
+key = ""
+active = false
+
+[expressions."脸黑"]
+file = "脸黑.exp3.json"
+key = ""
+active = false
+
+[expressions."身-围巾"]
+file = "身-围巾.exp3.json"
+key = ""
+active = false
+
+[expressions."身-毛衣"]
+file = "身-毛衣.exp3.json"
+key = ""
+active = false
+
+[expressions."身-腿绷带血隐藏"]
+file = "身-腿绷带血隐藏.exp3.json"
+key = ""
+active = false
+
+[expressions."身-腿绷带隐藏"]
+file = "身-腿绷带隐藏.exp3.json"
+key = ""
+active = false
