@@ -55,7 +55,7 @@ The portal registers shortcut **ids**, not key combos, so the compositor decides
 the actual keys. Either let the app bind them for you:
 
 ```toml
-# <appData>/web2d/config.toml
+# config/web2d/config.toml
 hyprlandAutoBind = true
 ```
 
@@ -87,16 +87,13 @@ bind = CTRL ALT, R, global, web2d:recenter
   (live landmark mesh + gaze/mouth readout, for tuning), quit.
 
 Window geometry and the model's position/zoom persist automatically to
-`<appData>/web2d/local.toml`.
+`config/web2d/local.toml`.
 
 ## Configuration
 
-Settings are TOML files loaded at runtime from the OS-standard per-user config
-dir (`<appData>/web2d` — Roaming `AppData` on Windows, `~/Library/Application
-Support` on macOS, `$XDG_CONFIG_HOME`/`~/.config` on Linux), the same in dev and
-a packaged build. The project's `config/web2d/` is only a seed template: on
-first run, if that per-user dir doesn't exist yet, it's copied there; after
-that, edit the per-user dir directly (the repo copy is no longer read).
+Settings are TOML files loaded at runtime, seeded on first run. In development
+they live under the project's `config/web2d/`; in a packaged build, the per-user
+app-data dir.
 
 **`config.toml`** — model-independent knobs plus `model`, the active model's name:
 
@@ -129,7 +126,7 @@ machine gets one profile per machine (e.g. `zero.toml` and `zero-linux.toml`).
 **`local.toml`** — per-machine volatile state (window geometry, live model
 transform). Gitignored; nothing in it is meant to be edited by hand.
 
-To add a model: create `<appData>/web2d/models/<name>.toml` with `location` and
+To add a model: create `config/web2d/models/<name>.toml` with `location` and
 `model`, set `model = "<name>"` in `config.toml`, and restart (or use the tray's
 "Reload config"). Gain entries and expressions are filled in automatically on
 load.

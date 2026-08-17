@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { app } from "electron";
@@ -17,36 +17,17 @@ import {
 	type WindowBounds,
 } from "../src/config";
 
-const log = createLogger("config");
-
-// The OS-standard per-user config dir — %APPDATA% / ~/Library/Application Support /
-// $XDG_CONFIG_HOME-or-~/.config — resolved by Electron itself rather than hardcoded here.
-const appConfigDir = join(app.getPath("appData"), "web2d");
+// Dev: the project's ./config dir stands in for the platform config root, so the
+// app dir is ./config/web2d. Packaged: the per-user app-data dir.
+const appConfigDir = app.isPackaged
+	? join(app.getPath("appData"), "web2d")
+	: resolve(process.cwd(), "config", "web2d");
 const configFile = join(appConfigDir, "config.toml");
 const modelsDir = join(appConfigDir, "models");
 // Volatile per-machine state (window geometry + live model transform). Kept out of the
 // tracked config/model TOMLs — gitignored — so it doesn't churn git or carry another
 // machine's absolute geometry.
 const localStateFile = join(appConfigDir, "local.toml");
-
-// One-time bootstrap: the repo's ./config/web2d used to double as the whole config dir
-// (dev-only stand-in for the real system location). Seed the new system dir from it so
-// existing tuning survives the move; only when running from source (a packaged build has
-// no ./config/web2d to seed from). Gated on configFile, not the directory itself — Electron
-// creates appConfigDir on its own (it's also the default userData dir, holding Cache/
-// Cookies/etc.) well before this ever runs, so the directory alone can't signal "already migrated".
-seedConfigDirFromRepo();
-
-function seedConfigDirFromRepo(): void {
-	if (existsSync(configFile)) return;
-	const repoConfigDir = resolve(process.cwd(), "config", "web2d");
-	if (!existsSync(repoConfigDir)) return;
-	cpSync(repoConfigDir, appConfigDir, {
-		recursive: true,
-		filter: (src) => !src.endsWith(".DS_Store"),
-	});
-	log.info(`seeded config dir from ${color.dim(repoConfigDir)} -> ${color.dim(appConfigDir)}`);
-}
 
 function readLocalStateSync(): Record<string, unknown> {
 	try {
@@ -64,6 +45,8 @@ function writeLocalStateSync(state: Record<string, unknown>): void {
 
 const EXP_SUFFIX = ".exp3.json";
 const EXPRESSION_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+
+const log = createLogger("config");
 
 let activeModelName = "";
 
