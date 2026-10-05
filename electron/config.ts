@@ -8,6 +8,7 @@ import {
 	DEFAULT_CONFIG,
 	DEFAULT_MODEL_CONFIG,
 	type Config,
+	type DeepPartial,
 	type Expression,
 	type GainSetting,
 	type HotkeyId,
@@ -67,19 +68,86 @@ const EXPRESSION_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
 let activeModelName = "";
 
-export async function loadConfig(): Promise<ResolvedConfig> {
+// Every exported mutator here is a read-modify-write (readToml → mutate → writeToml)
+// on config.toml or a models/*.toml, with no other locking. The settings window can
+// fire several of these concurrently (independently-debounced fields), and two
+// overlapping read-modify-writes on the same file silently drop whichever wrote first —
+// so every one of them (plus loadConfig/loadModel's own backfill/discovery write-backs)
+// runs through this single queue instead of racing.
+let writeQueue: Promise<void> = Promise.resolve();
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+	const run = writeQueue.then(fn, fn);
+	writeQueue = run.then(
+		() => undefined,
+		() => undefined,
+	);
+	return run;
+}
+
+// The last model this process actually loaded from disk (physics3.json parse +
+// expression-directory scan), reused by loadConfig's skipModelReload so a settings-page
+// edit that only touches config.toml's scalars doesn't pay for that I/O on every commit.
+let lastModel: { name: string; model: ModelConfig } | null = null;
+
+export function loadConfig(opts?: { skipModelReload?: boolean }): Promise<ResolvedConfig> {
+	return serialized(async () => {
+		await mkdir(modelsDir, { recursive: true });
+
+		const root = await readToml(configFile);
+		const modelName = typeof root.model === "string" ? root.model : "ariu";
+		delete root.window; // migrated to local.toml; drop any stale copy from an old config
+		const config = mergeDefaults(DEFAULT_CONFIG, root);
+		// Spread `root` first so any unrecognized keys survive the rewrite.
+		await writeToml(configFile, { ...root, model: modelName, ...config });
+
+		activeModelName = modelName;
+		const reusable = opts?.skipModelReload && lastModel?.name === modelName;
+		const model = reusable ? (lastModel as { model: ModelConfig }).model : await loadModel(modelName);
+		lastModel = { name: modelName, model };
+		return { modelName, config, model };
+	});
+}
+
+// Basenames of every models/*.toml on disk, for the settings window's model picker —
+// not just the currently active one loadConfig resolved.
+export async function listModels(): Promise<string[]> {
 	await mkdir(modelsDir, { recursive: true });
+	const files = await readdir(modelsDir);
+	return files
+		.filter((f) => f.endsWith(".toml"))
+		.map((f) => f.slice(0, -".toml".length))
+		.sort();
+}
 
-	const root = await readToml(configFile);
-	const modelName = typeof root.model === "string" ? root.model : "ariu";
-	delete root.window; // migrated to local.toml; drop any stale copy from an old config
-	const config = mergeDefaults(DEFAULT_CONFIG, root);
-	// Spread `root` first so any unrecognized keys survive the rewrite.
-	await writeToml(configFile, { ...root, model: modelName, ...config });
+export function setActiveModel(name: string): Promise<void> {
+	return serialized(async () => {
+		const root = await readToml(configFile);
+		root.model = name;
+		await writeToml(configFile, root);
+	});
+}
 
-	activeModelName = modelName;
-	const model = await loadModel(modelName);
-	return { modelName, config, model };
+// Generic scalar-config patch (settings-page sliders/toggles): merges into the raw TOML
+// root rather than replacing it, same as the rest of this file's read-modify-write
+// helpers, so any key the patch doesn't mention is untouched.
+export function updateConfig(patch: DeepPartial<Config>): Promise<void> {
+	return serialized(async () => {
+		const root = await readToml(configFile);
+		mergeToml(root, patch as Record<string, unknown>);
+		await writeToml(configFile, root);
+	});
+}
+
+function mergeToml(target: Record<string, unknown>, source: Record<string, unknown>): void {
+	for (const [key, value] of Object.entries(source)) {
+		if (isObject(value)) {
+			const existing = isObject(target[key]) ? (target[key] as Record<string, unknown>) : {};
+			mergeToml(existing, value);
+			target[key] = existing;
+		} else {
+			target[key] = value;
+		}
+	}
 }
 
 // Synchronous so the window can be created in the same launch tick (an async
@@ -120,10 +188,12 @@ export function loadHotkeysSync(): Record<HotkeyId, string> {
 	}
 }
 
-export async function setHotkey(id: HotkeyId, accelerator: string): Promise<void> {
-	const root = await readToml(configFile);
-	root[HOTKEY_TOML_KEY[id]] = accelerator;
-	await writeToml(configFile, root);
+export function setHotkey(id: HotkeyId, accelerator: string): Promise<void> {
+	return serialized(async () => {
+		const root = await readToml(configFile);
+		root[HOTKEY_TOML_KEY[id]] = accelerator;
+		await writeToml(configFile, root);
+	});
 }
 
 // Read synchronously so the Wayland global-shortcut setup runs in the launch tick.
@@ -169,10 +239,12 @@ export function loadUiTogglesSync(): Record<UiToggle, boolean> {
 	}
 }
 
-export async function saveUiToggle(key: UiToggle, value: boolean): Promise<void> {
-	const root = await readToml(configFile);
-	root[key] = value;
-	await writeToml(configFile, root);
+export function saveUiToggle(key: UiToggle, value: boolean): Promise<void> {
+	return serialized(async () => {
+		const root = await readToml(configFile);
+		root[key] = value;
+		await writeToml(configFile, root);
+	});
 }
 
 // The live model transform is per-machine, so it lives in local.toml keyed by model
@@ -195,12 +267,28 @@ function loadPosSync(name: string): Pos | undefined {
 	return isObject(positions) ? parsePos(positions[name]) : undefined;
 }
 
-export async function setExpressionActive(name: string, active: boolean): Promise<void> {
-	await patchModel((raw) => {
+// modelName is the model the edit was made against, supplied by the caller (not
+// resolved from the mutable `activeModelName` here) — a settings-window gain/expression
+// edit is debounced or simply in-flight over IPC, so the active model can change before
+// it lands. Targeting the file explicitly means the edit always reaches the model it was
+// actually made for, active or not, instead of racing a model switch onto the wrong file.
+export function setExpressionActive(modelName: string, name: string, active: boolean): Promise<void> {
+	return patchModel(modelName, (raw) => {
 		const expressions = isObject(raw.expressions) ? raw.expressions : {};
 		const prev = isObject(expressions[name]) ? expressions[name] : {};
 		expressions[name] = { ...prev, active };
 		raw.expressions = expressions;
+	});
+}
+
+// Patches a single [gain].<name> multiplier on modelName's TOML — the settings window's
+// per-model gain sliders. name/value come straight off the model's already-discovered
+// `gain` record, so no separate validation of which names are legal.
+export function setGain(modelName: string, name: string, value: number): Promise<void> {
+	return patchModel(modelName, (raw) => {
+		const gain = isObject(raw.gain) ? raw.gain : {};
+		gain[name] = value;
+		raw.gain = gain;
 	});
 }
 
@@ -374,11 +462,13 @@ async function discoverExpressions(
 const keysChanged = (a: object, b: object): boolean =>
 	Object.keys(a).sort().join(",") !== Object.keys(b).sort().join(",");
 
-async function patchModel(mutate: (raw: Record<string, unknown>) => void): Promise<void> {
-	const file = modelFile(activeModelName);
-	const raw = await readToml(file);
-	mutate(raw);
-	await writeToml(file, raw);
+function patchModel(modelName: string, mutate: (raw: Record<string, unknown>) => void): Promise<void> {
+	return serialized(async () => {
+		const file = modelFile(modelName);
+		const raw = await readToml(file);
+		mutate(raw);
+		await writeToml(file, raw);
+	});
 }
 
 // Whether the model's files are actually present (and warn if not). Used to gate the

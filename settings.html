@@ -11,11 +11,91 @@
 	<main class="panel">
 		<header class="header">
 			<h1>Settings</h1>
-			<p class="subtitle">Global shortcuts</p>
+			<p class="subtitle">web2d</p>
 		</header>
 
-		<div class="card">
-			<section class="row" id="row-lock">
+		<section class="card">
+			<div class="card-title">Model</div>
+			<div class="row">
+				<div class="label">
+					<div class="name">Active model</div>
+					<div class="hint">Switching reloads the overlay</div>
+				</div>
+				<div class="control">
+					<select id="model-select"></select>
+				</div>
+			</div>
+			<div class="status" id="model-status"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Overlay</div>
+			<div class="row">
+				<div class="label">
+					<div class="name">Lock (click-through)</div>
+				</div>
+				<div class="control">
+					<label class="switch">
+						<input type="checkbox" id="lock-toggle" />
+						<span class="switch-track"></span>
+					</label>
+				</div>
+			</div>
+			<div class="divider"></div>
+			<div class="row">
+				<div class="label">
+					<div class="name">Recenter face tracking</div>
+					<div class="hint">Reset the head pose to neutral</div>
+				</div>
+				<div class="control">
+					<button class="btn" id="recenter-btn">Recenter</button>
+				</div>
+			</div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Feel</div>
+			<div class="fields" id="fields-feel"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Smoothing <span class="card-subtitle">face tracking</span></div>
+			<div class="fields" id="fields-smoothing"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Eyes &amp; jaw</div>
+			<div class="fields" id="fields-eyes-jaw"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Physics</div>
+			<div class="fields" id="fields-physics"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Cursor look</div>
+			<div class="fields" id="fields-cursor"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Display</div>
+			<div class="fields" id="fields-display"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Model gain</div>
+			<div class="fields" id="gain-fields"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Expressions</div>
+			<div class="expr-fields" id="expr-fields"></div>
+		</section>
+
+		<section class="card">
+			<div class="card-title">Global shortcuts</div>
+			<div class="row" id="row-lock">
 				<div class="label">
 					<div class="name">Overlay lock</div>
 					<div class="hint">Toggle click-through</div>
@@ -27,11 +107,9 @@
 					</div>
 					<div class="status" data-status="lock"></div>
 				</div>
-			</section>
-
-			<div class="divider" id="divider-lock"></div>
-
-			<section class="row">
+			</div>
+			<div class="divider"></div>
+			<div class="row">
 				<div class="label">
 					<div class="name">Recenter face tracking</div>
 					<div class="hint">Reset the head pose to neutral</div>
@@ -43,10 +121,14 @@
 					</div>
 					<div class="status" data-status="recenter"></div>
 				</div>
-			</section>
-		</div>
+			</div>
+			<p class="footnote">Click a shortcut to rebind · <kbd>Esc</kbd> cancels · <kbd>⌫</kbd> unbinds</p>
+		</section>
 
-		<p class="footnote">Click a shortcut to rebind · <kbd>Esc</kbd> cancels · <kbd>⌫</kbd> unbinds</p>
+		<section class="card" id="linux-card">
+			<div class="card-title">Linux <span class="card-subtitle">Hyprland</span></div>
+			<div class="fields" id="fields-linux"></div>
+		</section>
 	</main>
 	<script type="module" src="./src/settings/main.ts"></script>
 </body>

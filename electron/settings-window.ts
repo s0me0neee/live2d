@@ -10,6 +10,11 @@ const log = createLogger("settings");
 // Single instance: reopening focuses the existing window instead of stacking.
 let settingsWin: BrowserWindow | null = null;
 
+// So main.ts can push config:changed broadcasts here too, alongside the overlay window.
+export function getSettingsWindow(): BrowserWindow | undefined {
+	return settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined;
+}
+
 export function openSettings(): void {
 	if (settingsWin && !settingsWin.isDestroyed()) {
 		focusWindow(settingsWin);
@@ -17,12 +22,16 @@ export function openSettings(): void {
 	}
 
 	// A plain, focusable window — unlike the overlay it must take keyboard focus to
-	// capture a shortcut, so it gets no applyMacOverlay treatment.
+	// capture a shortcut, so it gets no applyMacOverlay treatment. Tall enough for the
+	// full settings page (model/overlay/feel/smoothing/eyes/jaw/physics/cursor/display/
+	// gain/expressions/hotkeys); resizable + the page's own scroll cover the rest.
 	const win = new BrowserWindow({
-		width: 440,
-		height: 320,
+		width: 480,
+		height: 760,
+		minWidth: 420,
+		minHeight: 420,
 		title: "web2d settings",
-		resizable: false,
+		resizable: true,
 		fullscreenable: false,
 		minimizable: false,
 		show: false,

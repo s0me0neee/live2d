@@ -14,13 +14,21 @@ interface LoadedExpression {
 	checkbox?: HTMLInputElement;
 }
 
+export interface ExpressionsHandle {
+	// Syncs on/off state from modelConfig.expressions[*].active — used when a toggle
+	// changed elsewhere (the settings window) and reached this window via config:changed,
+	// so it's applied without re-persisting a change this window didn't originate.
+	apply(): void;
+}
+
 // Independent outfit/face toggles (several can be on at once), applied imperatively
 // and reset to default on off. On/off state round-trips through the model's TOML.
 export async function setupExpressions(
 	model: Live2DModel,
 	modelConfig: ModelConfig,
 	visible: boolean,
-): Promise<void> {
+	modelName: string,
+): Promise<ExpressionsHandle> {
 	const base = modelConfig.resolvedLocation || modelConfig.location;
 	// Load each file independently so one missing/corrupt .exp3.json drops only that
 	// expression instead of rejecting the whole set and disabling the panel.
@@ -57,7 +65,7 @@ export async function setupExpressions(
 		for (const p of d.params) {
 			cm.setParameterValueById(p.Id, on ? p.Value : (offValue.get(p.Id) ?? 0));
 		}
-		if (persist) window.electronAPI?.setExpression(d.name, on).catch(() => {});
+		if (persist) window.electronAPI?.setExpression(modelName, d.name, on).catch(() => {});
 	};
 
 	const panel = buildPanel(defs, setActive);
@@ -76,6 +84,15 @@ export async function setupExpressions(
 		const d = defs.find((x) => x.key && x.key === e.key);
 		if (d) setActive(d, !active.has(d.name));
 	});
+
+	return {
+		apply() {
+			for (const d of defs) {
+				const desired = modelConfig.expressions[d.name]?.active ?? false;
+				if (desired !== active.has(d.name)) setActive(d, desired, false);
+			}
+		},
+	};
 }
 
 function buildPanel(

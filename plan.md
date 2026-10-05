@@ -130,48 +130,31 @@ are in the tree today; **last reconciled against the code on 2026-07-30**.
       every platform (Hyprland's own `hyprctl cursorpos` query on Hyprland, Electron's
       `screen.getCursorScreenPoint()` + `win.getBounds()` everywhere else). macOS/
       Windows get the same click-through mouse-follow Hyprland had. (`electron/main.ts`)
+- [x] **Settings window v1 — model picker, live tuning, hot-reload** — the window now
+      covers the full original scope: active-model dropdown (`setActiveModel`, reloads
+      the overlay — a live model dispose/reload was judged too fragile), lock toggle +
+      recenter button, per-model `[gain]` sliders, expression checkboxes, and a
+      schema-driven set of cards for every other `Config` knob (feel, smoothing,
+      eyes/jaw, physics, cursor look, display), plus the pre-existing hotkeys and a
+      Linux-only `hyprlandAutoBind` toggle. Edits patch the TOML (`electron/config.ts`:
+      `listModels`/`setActiveModel`/`setGain`/`updateConfig`) and broadcast a fresh
+      `ResolvedConfig` over `config:changed` to both windows; the overlay merges it into
+      its live `config`/`modelConfig` objects in place (`deepAssign`) rather than
+      replacing them, so anything already reading those fields fresh per frame
+      (`mirror`/`headGain`/`headClampDeg`/`eyes`/`jaw`/`smoothing`/`bodyFollow`/cursor-
+      look's numeric knobs) applies with no extra plumbing; the few derived caches
+      (physics-output gain groups, physics breath/springiness baselines, expression
+      active state) get an explicit `apply()`/`refreshGain()` call. Only edits to
+      `detectFps`, `camera.width/height` or `cursorLook.enabled` — knobs baked into a
+      one-time resource acquisition (the worker's throttle, `getUserMedia`, the cursor-
+      look setup gate) — fall back to reloading the overlay, the same call as the model
+      switch. (`electron/config.ts`, `electron/main.ts`, `electron/preload.ts`,
+      `src/rig.ts`, `src/physics.ts`, `src/cursor-look.ts`, `src/expressions/`,
+      `src/settings/`)
 
 ## Next up (ordered)
 
-### 1. Finish Settings window v1 (the real feature, not just hotkeys)  ← NEXT
-
-The window today configures **only hotkeys**. The original v1 scope — active-model
-picker, lock toggle, recenter button, `[gain]` sliders, expression toggles — is still
-unbuilt, and changes apply via the interim tray **"Reload config"** (full renderer
-reload) rather than live re-apply.
-
-**a. Config / IPC surface** (`electron/config.ts`, `main.ts`, `preload.ts`)
-
-- `listModels()` (basenames of `models/*.toml`), `setActiveModel(name)`,
-  `setGain(name, value)` (patch `[gain].<name>` multiplier only), reuse
-  `setExpressionActive`. Expose `listModels`/`setModel`/`setGain`/`onConfigChanged`.
-- After a scalar write, `loadConfig()` and broadcast `config:changed`
-  (`ResolvedConfig`) to the overlay window. `setActiveModel` reloads the overlay
-  renderer instead (a live model dispose/reload is too fragile for v1).
-
-**b. Overlay live-apply** (`src/main.ts` + feature modules)
-
-- Have `rig.ts` / `physics.ts` / `expressions/` return a handle with an
-  `apply(config, modelConfig)` step. Note the rig refactor moved the `[gain]`
-  groups out of `face-tracking.ts` into **`rig.ts`**, so that's where a `[gain]`
-  change recomputes; `cursor-look.ts` reads its knobs once at setup and would need
-  the same treatment. `src/main.ts` keeps mutable `config`/`modelConfig`,
-  subscribes to `onConfigChanged`, fans values out.
-- This retires the tray "Reload config" workaround for scalar edits.
-
-**c. Settings UI** (`src/settings/main.ts`, `settings.html`)
-
-- Plain-DOM TS. Add sections under the existing hotkeys: model dropdown, lock toggle
-  (`getLock`/`onLockChanged`/`setLock`), recenter button, a gain slider per
-  `model.gain` entry (≈0–3, step 0.05), expression checkboxes (show assigned key).
-- RISK: an accessory (LSUIElement) app can be flaky taking **keyboard** focus.
-  Keep v1 controls mouse-only (dropdown/toggle/slider/checkbox); revisit focus
-  rather than the activation policy if typed input is ever needed.
-
-**Phasing:** (1) read-only render of model/lock/gain/expressions from `getConfig()` →
-(2) writes + `config:changed` + overlay apply handles → (3) model picker → reload.
-
-### 2. Packaging / release
+### 1. Packaging / release  ← NEXT
 
 `scripts/release.mjs` shells out to **electron-builder, which is neither installed
 nor configured** (no `build` block in `package.json`), so `pnpm release` can't work
@@ -181,7 +164,7 @@ paths over `web2dmodel://` rather than served from the project root — what act
 needs deciding is whether a packaged build ships models at all or keeps pointing at
 the user's own dirs.
 
-### 3. Beyond Hyprland (later) — see §4.6
+### 2. Beyond Hyprland (later) — see §4.6
 
 ## Linux overlay (Hyprland-first) — reference record
 

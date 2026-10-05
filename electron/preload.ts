@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { HotkeyId, Pos, ResolvedConfig } from "../src/config";
+import type { Config, DeepPartial, HotkeyId, Pos, ResolvedConfig } from "../src/config";
 import type { FaceResult } from "../src/face-worker";
 import { IS_WAYLAND } from "./platform";
+import type { UiToggle } from "./config";
 
 export interface Bounds {
 	x: number;
@@ -21,8 +22,27 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	// Report the live transform to main (held in memory, written to the model TOML
 	// only at quit). Fire-and-forget so dragging isn't gated on IPC round-trips.
 	reportPos: (pos: Pos): void => ipcRenderer.send("pos:report", pos),
-	setExpression: (name: string, active: boolean): Promise<void> =>
-		ipcRenderer.invoke("config:set-expression", name, active),
+	// modelName pins the edit to the model it was made against (not whatever's active by
+	// the time main handles it) — see electron/config.ts's setExpressionActive.
+	setExpression: (modelName: string, name: string, active: boolean): Promise<void> =>
+		ipcRenderer.invoke("config:set-expression", modelName, name, active),
+
+	// The settings window's write surface onto config.toml / models/*.toml. Every write
+	// resolves with the fresh ResolvedConfig and also arrives via onChanged (broadcast to
+	// both this window and the overlay), so callers don't need to thread the return value.
+	config: {
+		listModels: (): Promise<string[]> => ipcRenderer.invoke("config:list-models"),
+		setModel: (name: string): Promise<ResolvedConfig> => ipcRenderer.invoke("config:set-model", name),
+		setGain: (modelName: string, name: string, value: number): Promise<ResolvedConfig> =>
+			ipcRenderer.invoke("config:set-gain", modelName, name, value),
+		update: (patch: DeepPartial<Config>): Promise<ResolvedConfig> =>
+			ipcRenderer.invoke("config:update", patch),
+		onChanged: (cb: (cfg: ResolvedConfig) => void): (() => void) => {
+			const listener = (_e: unknown, cfg: ResolvedConfig) => cb(cfg);
+			ipcRenderer.on("config:changed", listener);
+			return () => ipcRenderer.removeListener("config:changed", listener);
+		},
+	},
 
 	// Overlay click-through control (≈ Tauri overlay_set_lock). `locked` = the
 	// overlay passes mouse events through to whatever is underneath.
@@ -55,6 +75,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.on("face:recenter", listener);
 			return () => ipcRenderer.removeListener("face:recenter", listener);
 		},
+		// The settings window's "Recenter" button — same action as the hotkey/tray item,
+		// triggered directly since the settings window has no accelerator to press.
+		recenter: (): Promise<void> => ipcRenderer.invoke("face:recenter"),
 	},
 
 	// Relays each detection result to the face-debug window (electron/face-debug-window.ts)
@@ -90,13 +113,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			ipcRenderer.invoke("config:set-hotkey", id, accelerator),
 	},
 
-	// Live show/hide of the FPS counter and expression list, toggled from the tray.
-	// Each returns an unsubscribe function.
+	// Live show/hide of the FPS counter and expression list, toggled from the tray or the
+	// settings window. Each `on*` returns an unsubscribe function.
 	ui: {
 		onShowFps: (cb: (visible: boolean) => void): (() => void) =>
 			subscribe("ui:show-fps", cb),
 		onShowExpressions: (cb: (visible: boolean) => void): (() => void) =>
 			subscribe("ui:show-expressions", cb),
+		set: (key: UiToggle, value: boolean): Promise<void> => ipcRenderer.invoke("ui:set-toggle", key, value),
 	},
 });
 

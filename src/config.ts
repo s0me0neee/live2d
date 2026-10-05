@@ -4,7 +4,18 @@
 
 export interface Config {
 	mirror: boolean;
-	smoothing: number;
+	// 1€ filter (see src/one-euro-filter.ts) for face-tracking pose only — cursor-look
+	// has its own separate lagMs smoothing and doesn't use this. A single fixed time
+	// constant can't both kill MediaPipe landmark jitter at rest and track fast real
+	// motion without lag; this adapts its cutoff to the signal's own speed instead.
+	smoothing: {
+		enabled: boolean; // false = raw passthrough, binds exactly to each detection frame
+		minCutoff: number; // Hz. Filtering strength at rest — lower = smoother idle but
+		// duller on slow real motion, higher = crisper but jitterier idle.
+		beta: number; // how fast filtering backs off as motion speeds up — higher = less
+		// lag on fast motion, at the cost of jitter reappearing then.
+		dCutoff: number; // smooths the internal velocity estimate; rarely needs changing.
+	};
 
 	headGain: number;
 	headClampDeg: number;
@@ -46,14 +57,14 @@ export interface Config {
 	// all, so main polls the global cursor at detectFps instead — works everywhere
 	// (Electron's `screen` API on macOS/Windows/X11, hyprctl on Hyprland) except a
 	// non-Hyprland Wayland session, which has no portable cursor source. Feeds the same
-	// rig as face tracking, so headClampDeg, smoothing and bodyFollow all apply on top
-	// of these.
+	// rig as face tracking (headClampDeg and bodyFollow apply on top of these), but
+	// through its own independent smoothing below, not the face-tracking `smoothing`.
 	cursorLook: {
 		enabled: boolean;
 		range: number; // cursor distance for full deflection, in model heights
 		headDeg: number; // head turn at full deflection, same unit as headClampDeg
 		eyeGain: number; // >1 saturates the eyes before the head; 2 = at half `range`
-		lagMs: number; // follow lag; higher = lazier, 0 = off. Stacks on `smoothing`.
+		lagMs: number; // follow lag; higher = lazier, 0 = off.
 	};
 
 	showFps: boolean;
@@ -65,7 +76,9 @@ export type HotkeyId = "lock" | "recenter";
 
 export const DEFAULT_CONFIG: Config = {
 	mirror: true,
-	smoothing: 0.55,
+	// Live-tuned: raw tracking already reads well with smoothing off, so this only
+	// needs to be light enough to eat detection jitter, not introduce real lag.
+	smoothing: { enabled: true, minCutoff: 2.0, beta: 0.02, dCutoff: 1.0 },
 	headGain: 1.5,
 	headClampDeg: 90,
 	bodyFollow: 1 / 3,
@@ -160,4 +173,47 @@ export interface ResolvedConfig {
 	modelName: string;
 	config: Config;
 	model: ModelConfig;
+}
+
+// A settings-page edit patches only the fields it touched; nested objects (smoothing,
+// physics, eyes, jaw, camera, cursorLook) merge key-by-key rather than replacing whole.
+export type DeepPartial<T> = {
+	[K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
+
+// Config paths a live overlay session can't re-apply without re-acquiring a resource it
+// only sets up once at boot (the camera, the detection worker's throttle, cursor-look's
+// async setup gate) — touching one of these reloads the overlay instead of live-applying.
+// Shared between electron/main.ts (decides whether to reload) and
+// src/settings/fields.ts (labels the field so the reload isn't a surprise), so the two
+// can't drift apart the way two hand-maintained copies could.
+export const RELOAD_REQUIRED_PATHS: string[][] = [
+	["detectFps"],
+	["camera", "width"],
+	["camera", "height"],
+	["cursorLook", "enabled"],
+];
+
+export function pathRequiresReload(path: string[]): boolean {
+	return RELOAD_REQUIRED_PATHS.some((p) => p.length === path.length && p.every((k, i) => k === path[i]));
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+	typeof v === "object" && v !== null && !Array.isArray(v);
+
+// Merges `source` into `target` in place (not a replace), so callers who closed over
+// `target`'s object identity (rig.ts/physics.ts/cursor-look.ts reading config.* fresh
+// per frame) see the update without needing every field wired through an apply() call.
+export function deepAssign<T extends object>(target: T, source: DeepPartial<T>): void {
+	const t = target as Record<string, unknown>;
+	const s = source as Record<string, unknown>;
+	for (const key of Object.keys(s)) {
+		const sv = s[key];
+		const tv = t[key];
+		if (isPlainObject(sv) && isPlainObject(tv)) {
+			deepAssign(tv, sv);
+		} else {
+			t[key] = sv;
+		}
+	}
 }

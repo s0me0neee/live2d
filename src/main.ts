@@ -1,9 +1,9 @@
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
-import { DEFAULT_CONFIG, DEFAULT_MODEL_CONFIG, type ResolvedConfig } from "./config";
+import { DEFAULT_CONFIG, DEFAULT_MODEL_CONFIG, deepAssign, type ResolvedConfig } from "./config";
 import { startFaceTracking } from "./face-tracking";
-import { setupExpressions } from "./expressions";
-import { setupPhysics } from "./physics";
+import { setupExpressions, type ExpressionsHandle } from "./expressions";
+import { setupPhysics, type PhysicsHandle } from "./physics";
 import { setupInteraction } from "./interaction";
 import { setupCursorLook } from "./cursor-look";
 import { createRigDriver, type RigDriver } from "./rig";
@@ -16,7 +16,7 @@ window.PIXI = PIXI;
 
 // In plain-browser dev there's no electronAPI; the fallback config has no model.
 const api = window.electronAPI;
-const { config, model: modelConfig }: ResolvedConfig = api
+const { modelName, config, model: modelConfig }: ResolvedConfig = api
 	? await api.getConfig()
 	: { modelName: "", config: DEFAULT_CONFIG, model: { ...DEFAULT_MODEL_CONFIG, expressions: {} } };
 
@@ -72,7 +72,7 @@ if (!modelConfig.location || !modelConfig.model) {
 	// off even when that one bails out.
 	(model as any).automator.autoFocus = false;
 
-	setupPhysics(model, config);
+	const physicsHandle: PhysicsHandle = setupPhysics(model, config);
 	setupInteraction(app, model, modelConfig);
 
 	// Owns all parameter writing, and runs whether or not the sources below start, so a
@@ -93,7 +93,36 @@ if (!modelConfig.location || !modelConfig.model) {
 			console.warn("Cursor look disabled:", err),
 		);
 	}
-	setupExpressions(model, modelConfig, config.showExpressions).catch((err) =>
-		console.warn("Expressions disabled:", err),
-	);
+	let expressionsHandle: ExpressionsHandle | undefined;
+	setupExpressions(model, modelConfig, config.showExpressions, modelName)
+		.then((handle) => (expressionsHandle = handle))
+		.catch((err) => console.warn("Expressions disabled:", err));
+
+	// Settings-window edits land here as a fresh ResolvedConfig. Merge into the existing
+	// config/modelConfig objects in place (not replace them) — every module above closed
+	// over these same references and already reads most fields fresh per frame/call, so
+	// mutating them live-applies mirror/headGain/headClampDeg/bodyFollow/eyes/jaw/
+	// smoothing/cursorLook's numeric knobs for free. Only the handful of derived caches
+	// (gain groups, physics baselines, expression active state) need an explicit re-apply.
+	api?.config.onChanged((resolved) => {
+		if (resolved.modelName !== modelName) return; // a model switch reloads this window instead
+		deepAssign(config, resolved.config);
+		deepAssign(modelConfig, resolved.model);
+		// deepAssign only overwrites keys the incoming object has; a gain source or
+		// expression whose file vanished from disk (re-discovered as dropped) needs its
+		// now-stale key removed explicitly, or it lingers in modelConfig forever.
+		pruneRemovedKeys(modelConfig.gain, resolved.model.gain);
+		pruneRemovedKeys(modelConfig.expressions, resolved.model.expressions);
+		app.ticker.maxFPS = config.renderFps;
+		PIXI.Ticker.shared.maxFPS = config.renderFps;
+		physicsHandle.apply(config);
+		rig?.refreshGain();
+		expressionsHandle?.apply();
+	});
+}
+
+function pruneRemovedKeys(target: Record<string, unknown>, source: Record<string, unknown>): void {
+	for (const key of Object.keys(target)) {
+		if (!(key in source)) delete target[key];
+	}
 }

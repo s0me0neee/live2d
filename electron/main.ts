@@ -16,11 +16,12 @@ import { applyMacOverlay } from "./mac-overlay";
 import { IS_WAYLAND } from "./platform";
 import { forwardConsole } from "./forward-console";
 import { registerModelScheme, handleModelProtocol } from "./model-protocol";
-import { openSettings } from "./settings-window";
+import { openSettings, getSettingsWindow } from "./settings-window";
 import { openFaceDebug, sendFaceDebugData } from "./face-debug-window";
 import type { FaceResult } from "../src/face-worker";
 import { createLogger, color } from "./log";
 import {
+	listModels,
 	loadConfig,
 	loadCursorLookSync,
 	loadHotkeysSync,
@@ -30,11 +31,23 @@ import {
 	savePosSync,
 	saveUiToggle,
 	saveWindowBoundsSync,
+	setActiveModel,
 	setExpressionActive,
+	setGain,
 	setHotkey,
+	updateConfig,
 	type UiToggle,
 } from "./config";
-import { DEFAULT_CONFIG, type HotkeyId, type Pos, type WindowBounds } from "../src/config";
+import {
+	DEFAULT_CONFIG,
+	RELOAD_REQUIRED_PATHS,
+	type Config,
+	type DeepPartial,
+	type HotkeyId,
+	type Pos,
+	type ResolvedConfig,
+	type WindowBounds,
+} from "../src/config";
 import type { Shortcut } from "@web2d/global-hotkey";
 import type { ClientInfo, CursorPos, WindowRule } from "@web2d/overlay_hyprland";
 
@@ -81,9 +94,12 @@ const isAllowedModelPath = (filePath: string): boolean => {
 };
 
 // Config IPC: the renderer fetches the resolved config at boot, then writes back
-// the live transform / expression toggles. All file IO lives in ./config.
-ipcMain.handle("config:get", async () => {
-	const cfg = await loadConfig();
+// the live transform / expression toggles / settings-page edits. All file IO lives in
+// ./config; this module only decides who hears about a change and whether the overlay
+// needs a full reload (a new model's assets, or a knob no live-apply path covers) versus
+// a live re-apply (config:changed, handled in src/main.ts's feature-module handles).
+async function refreshConfig(opts?: { skipModelReload?: boolean }): Promise<ResolvedConfig> {
+	const cfg = await loadConfig(opts);
 	if (cfg.model.resolvedLocation) {
 		allowedModelRoots.add(cfg.model.resolvedLocation);
 		log.info(
@@ -96,7 +112,56 @@ ipcMain.handle("config:get", async () => {
 		log.warn(`model ${color.bold(cfg.modelName)} has no resolvable location — nothing will load`);
 	}
 	return cfg;
-});
+}
+
+function broadcastConfig(cfg: ResolvedConfig): void {
+	overlayWindow()?.webContents.send("config:changed", cfg);
+	getSettingsWindow()?.webContents.send("config:changed", cfg);
+}
+
+// RELOAD_REQUIRED_PATHS (src/config.ts) is the single source of truth for which knobs
+// need a reload instead of a live re-apply, shared with the settings UI's field hints.
+function touchesReloadPath(patch: Record<string, unknown>): boolean {
+	return RELOAD_REQUIRED_PATHS.some((path) => pathPresentIn(patch, path));
+}
+function pathPresentIn(obj: Record<string, unknown>, path: string[]): boolean {
+	let cur: unknown = obj;
+	for (const key of path) {
+		if (typeof cur !== "object" || cur === null || !(key in (cur as object))) return false;
+		cur = (cur as Record<string, unknown>)[key];
+	}
+	return true;
+}
+
+async function persistAndBroadcast(
+	mutate: () => Promise<void>,
+	opts?: { reloadOverlay?: boolean; skipModelReload?: boolean },
+): Promise<ResolvedConfig> {
+	await mutate();
+	const cfg = await refreshConfig({ skipModelReload: opts?.skipModelReload });
+	broadcastConfig(cfg);
+	if (opts?.reloadOverlay) overlayWindow()?.webContents.reload();
+	return cfg;
+}
+
+ipcMain.handle("config:get", () => refreshConfig());
+ipcMain.handle("config:list-models", () => listModels());
+// A different model's assets, physics routing and gain/expression sets are enough of a
+// re-init that a live swap is too fragile to be worth it — reload the renderer instead.
+ipcMain.handle("config:set-model", (_e, name: string) =>
+	persistAndBroadcast(() => setActiveModel(String(name)), { reloadOverlay: true }),
+);
+ipcMain.handle("config:set-gain", (_e, modelName: string, name: string, value: number) =>
+	persistAndBroadcast(() => setGain(String(modelName), String(name), Number(value))),
+);
+ipcMain.handle("config:update", (_e, patch: DeepPartial<Config>) =>
+	// A scalar config.toml patch never touches a model file, so there's no need to re-run
+	// loadModel()'s physics3.json parse + expression directory scan on every debounce tick.
+	persistAndBroadcast(() => updateConfig(patch), {
+		reloadOverlay: touchesReloadPath(patch),
+		skipModelReload: true,
+	}),
+);
 // The renderer reports the live model transform on each drag-stop / zoom. Persist it
 // debounced — the transform is Pixi-internal (unlike the OS window it has no AeroSpace
 // implication), so there's no reason to defer to quit, where a SIGTERM/SIGINT kill
@@ -113,8 +178,8 @@ ipcMain.on("pos:report", (_e, pos: Pos) => {
 });
 // Fire-and-forget relay from the overlay renderer to the face-debug window (if open).
 ipcMain.on("face-debug:data", (_e, result: FaceResult) => sendFaceDebugData(result));
-ipcMain.handle("config:set-expression", (_e, name: string, active: boolean) =>
-	setExpressionActive(name, Boolean(active)),
+ipcMain.handle("config:set-expression", (_e, modelName: string, name: string, active: boolean) =>
+	persistAndBroadcast(() => setExpressionActive(String(modelName), name, Boolean(active))),
 );
 ipcMain.handle("config:get-hotkey", (_e, id: HotkeyId) => (id in hotkeys ? hotkeys[id] : ""));
 ipcMain.handle("config:set-hotkey", async (_e, id: HotkeyId, accelerator: string) => {
@@ -218,6 +283,9 @@ const HOTKEY_DESCRIPTION: Record<HotkeyId, string> = {
 	lock: "Toggle click-through lock",
 	recenter: "Recenter face tracking",
 };
+// The settings window has no accelerator of its own to press, so it needs a direct way
+// to fire the same action the recenter hotkey/tray item trigger.
+ipcMain.handle("face:recenter", () => HOTKEY_ACTION.recenter());
 const hotkeys: Record<HotkeyId, string> = {
 	lock: DEFAULT_CONFIG.lockHotkey,
 	recenter: DEFAULT_CONFIG.recenterHotkey,
@@ -631,6 +699,10 @@ const UI_CHANNEL: Record<UiToggle, string> = {
 function setUiToggle(key: UiToggle, value: boolean): void {
 	uiToggles[key] = value;
 	overlayWindow()?.webContents.send(UI_CHANNEL[key], value);
+	// The settings window's own Display-section checkbox for this toggle listens on the
+	// same channel (src/settings/main.ts's initUiToggleSync), so it stays in sync when
+	// the tray — not that checkbox — is what changed it.
+	getSettingsWindow()?.webContents.send(UI_CHANNEL[key], value);
 	log.info(`${key} ${value ? color.green("on") : color.gray("off")}`);
 	saveUiToggle(key, value).catch((e) => log.warn(`save ${key} failed:`, e));
 	// Rebuild the whole menu so the checkbox repaints: on Linux the SNI/libdbusmenu
@@ -638,6 +710,9 @@ function setUiToggle(key: UiToggle, value: boolean): void {
 	// setContextMenu does. (Harmless on macOS; the menu is already closed by click time.)
 	refreshTrayMenu();
 }
+// The settings window's own show-FPS/show-expressions checkboxes drive the same toggle
+// the tray menu does, so they share persistence/broadcast/tray-repaint behavior.
+ipcMain.handle("ui:set-toggle", (_e, key: UiToggle, value: boolean) => setUiToggle(key, Boolean(value)));
 
 // Registered once (not per-window) so re-creating the window can't double-register.
 function registerOverlayIpc(): void {

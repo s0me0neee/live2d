@@ -15,26 +15,33 @@ export async function setupCursorLook(
 	model: Live2DModel,
 	config: Config,
 ): Promise<void> {
-	const { enabled, range, headDeg, eyeGain, lagMs } = config.cursorLook;
+	// Whether cursor-look runs at all is decided once at boot (it gates the whole async
+	// setup below, including whether main's cursor poll ever starts) — toggling it later
+	// from the settings window reloads the overlay rather than trying to start/stop this
+	// setup live. range/headDeg/eyeGain/lagMs are read fresh off config.cursorLook below,
+	// so those four *are* live-editable without a reload.
+	if (!config.cursorLook.enabled || !window.electronAPI || !(await window.electronAPI.cursorLook.supported())) {
+		return;
+	}
 	const api = window.electronAPI;
-	if (!enabled || !api || !(await api.cursorLook.supported())) return;
 
 	const lookAt = (x: number, y: number): void => {
+		const cl = config.cursorLook;
 		// Distance for a full turn scales with the model, so zooming doesn't change how
 		// far the mouse must travel. Screen y grows downward, head pitch upward.
-		const radius = Math.max(1, model.height * 0.5 * range);
+		const radius = Math.max(1, model.height * 0.5 * cl.range);
 		const nx = clamp((x - model.x) / radius, -1, 1);
 		const ny = clamp((model.y - y) / radius, -1, 1);
 
-		look.angleX = nx * headDeg;
-		look.angleY = ny * headDeg;
+		look.angleX = nx * cl.headDeg;
+		look.angleY = ny * cl.headDeg;
 		// Cross-term tilt, the shape the Cubism runtime's own focus controller used — a
 		// diagonal glance rolls the head slightly, straight-on movement doesn't.
-		look.angleZ = -nx * ny * headDeg;
+		look.angleZ = -nx * ny * cl.headDeg;
 		// eyeGain > 1 saturates the eyes before the head finishes turning, so a small
 		// glance moves only the eyes.
-		look.eyeBallX = nx * eyeGain;
-		look.eyeBallY = ny * eyeGain;
+		look.eyeBallX = nx * cl.eyeGain;
+		look.eyeBallY = ny * cl.eyeGain;
 	};
 
 	let rawX = 0;
@@ -64,6 +71,7 @@ export async function setupCursorLook(
 		if (!seen) return; // no cursor seen yet — leave the model facing forward
 		// A time constant rather than a per-frame factor, so the feel doesn't change with
 		// renderFps. lagMs <= 0 means instant (also avoids a 0/0 NaN when deltaMS is 0).
+		const lagMs = config.cursorLook.lagMs;
 		const k = lagMs <= 0 ? 1 : clamp(1 - Math.exp(-app.ticker.deltaMS / lagMs), 0, 1);
 		smoothX += (rawX - smoothX) * k;
 		smoothY += (rawY - smoothY) * k;

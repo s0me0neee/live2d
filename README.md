@@ -103,7 +103,8 @@ that, edit the per-user dir directly (the repo copy is no longer read).
 | key | what it does |
 | --- | --- |
 | `model` | active model = `models/<model>.toml` |
-| `mirror`, `smoothing` | mirror the tracking; per-frame smoothing toward the target |
+| `mirror` | mirror the tracking |
+| `[smoothing]` | face-tracking pose filter (1€ filter, cursor-look is separate): `enabled` (`false` = raw passthrough), `minCutoff`, `beta`, `dCutoff` |
 | `headGain`, `headClampDeg`, `bodyFollow`, `breath` | head/body/breath feel |
 | `[physics]` | pendulum sim: `springiness`, wind (`windEnabled`, `wind`, `gust`, `gustHz`) |
 | `[eyes]`, `[jaw]` | blink and mouth-open shaping (`deadzone`/`curve`/`gain`, `gazeGain`, `openMax`) |
