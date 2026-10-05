@@ -5,7 +5,9 @@
 const SCHEME = "web2dmodel";
 
 export function modelAssetUrl(absDir: string, file: string): string {
-	const full = `${absDir.replace(/\/+$/, "")}/${file}`;
+	// absDir may be a Windows path (backslashes); splitting/encoding below assumes "/".
+	const posixDir = absDir.replace(/\\/g, "/").replace(/\/+$/, "");
+	const full = `${posixDir}/${file}`;
 	const encoded = full.split("/").map(encodeURIComponent).join("/");
 	return `${SCHEME}://model${encoded.startsWith("/") ? "" : "/"}${encoded}`;
 }

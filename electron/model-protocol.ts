@@ -45,7 +45,12 @@ export function handleModelProtocol(isAllowed: (filePath: string) => boolean): v
 	protocol.handle(MODEL_SCHEME, async (request) => {
 		let filePath: string;
 		try {
-			filePath = resolve(decodeURIComponent(new URL(request.url).pathname));
+			let decodedPath = decodeURIComponent(new URL(request.url).pathname);
+			// On Windows the pathname is "/C:/Users/..." — the leading slash before the
+			// drive letter isn't part of the path, and resolve() would otherwise prepend
+			// the cwd's drive again, producing "C:\C:\Users\...".
+			decodedPath = decodedPath.replace(/^\/([a-zA-Z]:\/)/, "$1");
+			filePath = resolve(decodedPath);
 		} catch {
 			log.warn(`malformed model URL: ${color.dim(request.url)}`);
 			return new Response("bad request", { status: 400 });
