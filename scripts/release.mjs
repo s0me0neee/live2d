@@ -36,7 +36,7 @@ await run("node", ["scripts/build-electron.mjs"]);
 
 // 2. Renderer. `vite build` is production by default; passing --mode explicitly
 //    documents intent and is immune to a stray --mode override in the config.
-await run("pnpm", ["exec", "vite", "build", "--mode", "production"]);
+await run("bun", ["run", "vite", "build", "--mode", "production"]);
 
 // Asset caveat: /model and /mediapipe are dev-only (served from the project root by
 // Vite, not in `vite build` output). Ship them as electron-builder `extraResources`
@@ -48,8 +48,8 @@ if (PREVIEW) {
 	// 3. Package. electron-builder is the assumption here; swap this single line
 	//    for forge / @electron/packager if that's your toolchain. --dir skips
 	//    installer generation and just produces the unpacked app dir.
-	const builderArgs = ["exec", "electron-builder", ...(DIR_ONLY ? ["--dir"] : [])];
-	await run("pnpm", builderArgs);
+	const builderArgs = ["run", "electron-builder", ...(DIR_ONLY ? ["--dir"] : [])];
+	await run("bun", builderArgs);
 	console.log(`\n✓ release ${DIR_ONLY ? "(unpacked)" : "(packaged)"} complete`);
 }
 

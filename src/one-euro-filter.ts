@@ -9,51 +9,31 @@ export interface OneEuroConfig {
 }
 
 export interface OneEuroFilter {
-	step(raw: number, deltaMs: number, cfg: OneEuroConfig): number;
+	// Once per real sample, with the time since the previous sample's capture.
+	step(raw: number, dtMs: number, cfg: OneEuroConfig): number;
 	reset(): void;
 }
 
 const TWO_PI = 2 * Math.PI;
 const alpha = (cutoffHz: number, dtSec: number): number => 1 / (1 + 1 / (TWO_PI * cutoffHz) / dtSec);
 
-// The caller (rig.ts) only ever calls step() when a channel is actually driving
-// output, so raw values can go a long time between calls (e.g. face tracking regained
-// after minutes away). `msSinceChange` — not the render tick's own deltaMs — is what
-// the velocity estimate is computed against, so a stale gap can't be mistaken for slow
-// motion; see rig.ts's reset-on-liveness-change for the complementary half of this.
 export function createOneEuroFilter(): OneEuroFilter {
-	let xPrev = 0;
 	let xHat = 0;
 	let dxHat = 0;
-	let cutoff = 1;
-	let msSinceChange = 0;
 	let initialized = false;
 
 	return {
-		step(raw, deltaMs, cfg) {
+		step(raw, dtMs, cfg) {
 			if (!initialized) {
-				xPrev = raw;
 				xHat = raw;
 				dxHat = 0;
-				cutoff = cfg.minCutoff;
-				msSinceChange = 0;
 				initialized = true;
 				return xHat;
 			}
-
-			msSinceChange += deltaMs;
-			if (raw !== xPrev) {
-				// Floored so a same-tick raw change (deltaMs can legitimately be 0) can't divide
-				// by zero and poison dxHat/cutoff with Infinity/NaN forever.
-				const dtSec = Math.max(msSinceChange, 1) / 1000;
-				const dx = (raw - xPrev) / dtSec;
-				dxHat += (dx - dxHat) * alpha(cfg.dCutoff, dtSec);
-				cutoff = cfg.minCutoff + cfg.beta * Math.abs(dxHat);
-				xPrev = raw;
-				msSinceChange = 0;
-			}
-
-			xHat += (raw - xHat) * alpha(cutoff, deltaMs / 1000);
+			// Floored so two samples sharing a timestamp can't poison the state with Infinity/NaN.
+			const dtSec = Math.max(dtMs, 1) / 1000;
+			dxHat += ((raw - xHat) / dtSec - dxHat) * alpha(cfg.dCutoff, dtSec);
+			xHat += (raw - xHat) * alpha(cfg.minCutoff + cfg.beta * Math.abs(dxHat), dtSec);
 			return xHat;
 		},
 		reset() {

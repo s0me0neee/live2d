@@ -157,7 +157,7 @@ are in the tree today; **last reconciled against the code on 2026-07-30**.
 ### 1. Packaging / release  ← NEXT
 
 `scripts/release.mjs` shells out to **electron-builder, which is neither installed
-nor configured** (no `build` block in `package.json`), so `pnpm release` can't work
+nor configured** (no `build` block in `package.json`), so `bun run release` can't work
 yet. Its in-file "ASSET CAVEAT" is also out of date: MediaPipe now lives in
 `public/` (so `vite build` copies it) and model assets are loaded from absolute
 paths over `web2dmodel://` rather than served from the project root — what actually
@@ -199,7 +199,7 @@ live compositor. The JS surface (`@web2d/overlay_hyprland`):
 Wired into Electron: added to root `package.json` + `build:native`, esbuild
 `external`, and used from `electron/main.ts` (windowrules 4.2, lock 4.4, bounds
 restore, cursor poll). Note the built `.node` is gitignored — a fresh clone needs
-`pnpm build:native` or both native features degrade to a logged warning.
+`bun run build:native` or both native features degrade to a logged warning.
 
 ### 4.2 Windowrules ✅ DONE
 
@@ -227,7 +227,7 @@ windowrule[web2d]:no_follow_mouse true / false
 - OPEN (still unverified): the `[web2d]` selector matches by app-id/class, and in dev
   the window may report `electron`, in which case these rules silently match nothing.
   `setWindowRules` reply-checking proves the *keyword was accepted*, not that it
-  matched a window, so it can't catch this. Verify by running `pnpm dev` and
+  matched a window, so it can't catch this. Verify by running `bun run dev` and
   checking `hyprctl clients -j | grep -E '"class"|"initialClass"|"title"'` for the
   overlay window. If the class is wrong, `float`/`pin` can move to the
   address-targeted `set_floating`/`set_pinned` dispatchers; the toggled set has no
@@ -289,9 +289,9 @@ blocker, and the tray Lock item is a way out that doesn't need the hotkey bound:
 - The repo path (`rust/live2d`) is a stale Tauri-era artifact; the app is all
   TS/Electron plus the two napi crates. `README.md` and `CLAUDE.md` were rewritten
   against the tree on 2026-07-30 and are current.
-- No linter and no tests: `pnpm test` runs `test/test.ts`, which is a single
-  commented-out line. `tsc` covers `src`/`test`/`global_hotkey` — **not**
-  `electron/`, which esbuild only type-erases.
+- No linter; `bun test` runs the unit tests in `test/*.test.ts`. `tsc` covers
+  `src`/`test`/`global_hotkey` (plus `electron/config.ts`, via the tests' type
+  imports) — **not** the rest of `electron/`, which esbuild only type-erases.
 - Perf note (unaddressed, low priority): the MediaPipe JS ends up in a shared
   ~137 kB chunk that the overlay entry imports **statically** (via
   `face-geometry.ts`'s landmark-connection constants), and the worker bundles its

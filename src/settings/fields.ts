@@ -38,6 +38,14 @@ export const LINUX_FIELDS: Field[] = [
 	},
 ];
 
+function oneEuroFields(path: string[], label: string, beta: { max: number; step: number }): NumberField[] {
+	return [
+		{ kind: "number", path: [...path, "minCutoff"], label: `${label} min cutoff`, hint: "Hz", min: 0.1, max: 10, step: 0.1 },
+		{ kind: "number", path: [...path, "beta"], label: `${label} beta`, min: 0, ...beta },
+		{ kind: "number", path: [...path, "dCutoff"], label: `${label} d cutoff`, hint: "Hz", min: 0.1, max: 10, step: 0.1 },
+	];
+}
+
 export const SECTIONS: Section[] = [
 	{
 		id: "feel",
@@ -55,9 +63,9 @@ export const SECTIONS: Section[] = [
 		title: "Smoothing (face tracking)",
 		fields: [
 			{ kind: "bool", path: ["smoothing", "enabled"], label: "Enabled" },
-			{ kind: "number", path: ["smoothing", "minCutoff"], label: "Min cutoff", hint: "Hz", min: 0.1, max: 10, step: 0.1 },
-			{ kind: "number", path: ["smoothing", "beta"], label: "Beta", min: 0, max: 1, step: 0.01 },
-			{ kind: "number", path: ["smoothing", "dCutoff"], label: "d cutoff", hint: "Hz", min: 0.1, max: 10, step: 0.1 },
+			...oneEuroFields(["smoothing"], "Head", { max: 1, step: 0.01 }),
+			...oneEuroFields(["smoothing", "eyes"], "Eyes", { max: 20, step: 0.1 }),
+			...oneEuroFields(["smoothing", "mouth"], "Mouth", { max: 20, step: 0.1 }),
 		],
 	},
 	{

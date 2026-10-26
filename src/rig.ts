@@ -1,7 +1,7 @@
-import { Ticker } from "pixi.js";
 import type { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
 import type { Config, ModelConfig } from "./config";
-import { createOneEuroFilter } from "./one-euro-filter";
+import { createFaceSmoother } from "./face-smoother";
+import type { OneEuroConfig } from "./one-euro-filter";
 
 // The Live2D parameters we drive (with their value ranges).
 export interface Rig {
@@ -35,7 +35,8 @@ export interface LookTarget {
 export interface RigDriver {
 	pose: Rig;
 	look: LookTarget;
-	markFaceFresh(): void;
+	// Call after each detection is written into `pose`, with its camera capture time.
+	pushFaceSample(capturedAtMs: number): void;
 	// Recomputes the physics-output gain groups from the latest modelConfig.gain values
 	// (a settings-window slider edit) — everything else Config-level rig reads fresh off
 	// the same object each frame already, but gain groups are a derived cache, not a
@@ -56,8 +57,19 @@ const neutralLook = (): LookTarget => ({
 	eyeBallX: 0, eyeBallY: 0,
 });
 
-// Precomputed so the per-frame loop and the filter bank below allocate nothing.
+// Precomputed so the per-frame loop and the face smoother allocate nothing.
 const RIG_KEYS = Object.keys(neutral()) as (keyof Rig)[];
+
+type SmoothingGroup = "head" | "eyes" | "mouth";
+const SMOOTHING_GROUP: Record<keyof Rig, SmoothingGroup> = {
+	angleX: "head", angleY: "head", angleZ: "head",
+	browLY: "head", browRY: "head",
+	eyeLOpen: "eyes", eyeROpen: "eyes",
+	eyeBallX: "eyes", eyeBallY: "eyes",
+	mouthOpen: "mouth", mouthForm: "mouth",
+};
+const smoothingFor = (s: Config["smoothing"], group: SmoothingGroup): OneEuroConfig =>
+	group === "head" ? s : s[group];
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -79,14 +91,13 @@ export function createRigDriver(
 
 	const pose = neutral(); // latest detection, unclamped, written by face-tracking.ts
 	const clampedPose = neutral(); // pose after headClampDeg/gaze clamp, pre-filter scratch
-	const smoothedPose = neutral(); // face-tracking pipeline's output
 	const look = neutralLook(); // latest cursor aim — already smoothed by cursor-look.ts
 	const rig = neutral(); // final values actually written to Live2D params
 
-	// One filter per Rig channel — angle/eye/mouth/brow all move too differently to
-	// share one filter's velocity estimate. Only feeds from `pose`; cursor-look's `look`
-	// has its own separate lagMs smoothing and never touches these.
-	const poseFilters = RIG_KEYS.map(() => createOneEuroFilter());
+	// Only feeds from `pose`; cursor-look's `look` has its own lagMs smoothing.
+	const face = createFaceSmoother(RIG_KEYS, (key) =>
+		config.smoothing.enabled ? smoothingFor(config.smoothing, SMOOTHING_GROUP[key]) : null,
+	);
 
 	let lastFaceAt = -Infinity;
 	let wasFaceLive = false;
@@ -101,36 +112,29 @@ export function createRigDriver(
 	const set = (id: string, v: number) => cm.setParameterValueById(id, v);
 	const head = modelConfig.headAngle;
 
+	const pushFaceSample = (capturedAtMs: number) => {
+		const now = performance.now();
+		// After a stale gap the filters would read the whole gap as one slow move and
+		// sweep in from the old pose instead of snapping onto the real one.
+		if (now - lastFaceAt >= FACE_STALE_MS) face.reset();
+		clampPose(clampedPose, pose, config.headClampDeg);
+		face.push(clampedPose, capturedAtMs, now);
+		lastFaceAt = now;
+	};
+
 	internal.on("afterMotionUpdate", () => {
-		const faceLive = performance.now() - lastFaceAt < FACE_STALE_MS;
+		const now = performance.now();
+		const faceLive = now - lastFaceAt < FACE_STALE_MS;
 		if (faceLive !== wasFaceLive) {
 			internal.eyeBlink = faceLive ? undefined : idleBlink;
 			wasFaceLive = faceLive;
-			// A stale gap (camera covered, face out of frame) can be minutes long. Without
-			// this, the filters' next real sample would compute velocity against that whole
-			// gap and read as near-zero speed, sweeping in slowly instead of snapping back
-			// onto the real position. Runs on both directions of the transition — a no-op
-			// when losing the face, since smoothedPose isn't selected into rig while !faceLive.
-			poseFilters.forEach((f) => f.reset());
-		}
-
-		// Face-tracking pipeline: clamp once, then filter (or bypass when disabled) — runs
-		// every tick regardless of faceLive, so it's already caught up by the time it's
-		// selected below.
-		const lim = config.headClampDeg;
-		clampPose(clampedPose, pose, lim);
-		if (config.smoothing.enabled) {
-			RIG_KEYS.forEach((key, i) => {
-				smoothedPose[key] = poseFilters[i].step(clampedPose[key], Ticker.shared.deltaMS, config.smoothing);
-			});
-		} else {
-			for (const key of RIG_KEYS) smoothedPose[key] = clampedPose[key];
 		}
 
 		// Selection: cursor-look's own smoothing already ran (cursor-look.ts), so `look`
 		// only needs the same clamp face-tracking gets, not another filtering pass.
+		const lim = config.headClampDeg;
 		if (faceLive) {
-			for (const key of RIG_KEYS) rig[key] = smoothedPose[key];
+			face.read(now, rig);
 		} else {
 			rig.angleX = clamp(look.angleX, -lim, lim);
 			rig.angleY = clamp(look.angleY, -lim, lim);
@@ -216,9 +220,7 @@ export function createRigDriver(
 	return {
 		pose,
 		look,
-		markFaceFresh: () => {
-			lastFaceAt = performance.now();
-		},
+		pushFaceSample,
 		refreshGain: () => {
 			gainGroups = computeGainGroups(modelConfig.gain);
 		},

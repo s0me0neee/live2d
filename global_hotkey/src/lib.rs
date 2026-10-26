@@ -9,7 +9,7 @@ use zbus::{Connection, Proxy};
 const PORTAL_DEST: &str = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
 
-// Debug tracing to stderr (visible in `pnpm dev`). Prefixed so it's greppable and
+// Debug tracing to stderr (visible in `bun run dev`). Prefixed so it's greppable and
 // clearly attributable to the native module.
 macro_rules! log {
     ($($arg:tt)*) => {{

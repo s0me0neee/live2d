@@ -2,6 +2,8 @@
 // (electron/config.ts) and sent to the renderer over IPC; these defaults seed
 // new files and back-fill missing keys.
 
+import type { OneEuroConfig } from "./one-euro-filter";
+
 export interface Config {
 	mirror: boolean;
 	// 1€ filter (see src/one-euro-filter.ts) for face-tracking pose only — cursor-look
@@ -15,6 +17,10 @@ export interface Config {
 		beta: number; // how fast filtering backs off as motion speeds up — higher = less
 		// lag on fast motion, at the cost of jitter reappearing then.
 		dCutoff: number; // smooths the internal velocity estimate; rarely needs changing.
+		// The above apply to head angles + brows. Eyelids/gaze and mouth open/smile get
+		// their own: they move in 0..1 units, not degrees, so one beta can't fit both scales.
+		eyes: OneEuroConfig;
+		mouth: OneEuroConfig;
 	};
 
 	headGain: number;
@@ -78,7 +84,14 @@ export const DEFAULT_CONFIG: Config = {
 	mirror: true,
 	// Live-tuned: raw tracking already reads well with smoothing off, so this only
 	// needs to be light enough to eat detection jitter, not introduce real lag.
-	smoothing: { enabled: true, minCutoff: 2.0, beta: 0.02, dCutoff: 1.0 },
+	smoothing: {
+		enabled: true,
+		minCutoff: 2.0,
+		beta: 0.02,
+		dCutoff: 1.0,
+		eyes: { minCutoff: 3.0, beta: 5.0, dCutoff: 1.0 },
+		mouth: { minCutoff: 2.5, beta: 4.0, dCutoff: 1.0 },
+	},
 	headGain: 1.5,
 	headClampDeg: 90,
 	bodyFollow: 1 / 3,

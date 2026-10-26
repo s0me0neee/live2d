@@ -23,7 +23,7 @@ export async function startFaceTracking(driver: RigDriver, config: Config): Prom
 	worker.onmessage = (e: MessageEvent<FaceWorkerMessage>) => {
 		if (e.data.type !== "result") return;
 		mapResult(e.data, driver.pose, config, calibration, gazeCalibration);
-		driver.markFaceFresh();
+		driver.pushFaceSample(e.data.capturedAt);
 		// No-op unless the face-debug window is open (electron/face-debug-window.ts).
 		window.electronAPI?.faceDebug?.send(e.data);
 	};

@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { app } from "electron";
@@ -20,9 +20,7 @@ import {
 
 const log = createLogger("config");
 
-// The OS-standard per-user config dir — %APPDATA% / ~/Library/Application Support /
-// $XDG_CONFIG_HOME-or-~/.config — resolved by Electron itself rather than hardcoded here.
-const appConfigDir = join(app.getPath("appData"), "web2d");
+const appConfigDir = join(userConfigHome(), "web2d");
 const configFile = join(appConfigDir, "config.toml");
 const modelsDir = join(appConfigDir, "models");
 // Volatile per-machine state (window geometry + live model transform). Kept out of the
@@ -30,23 +28,23 @@ const modelsDir = join(appConfigDir, "models");
 // machine's absolute geometry.
 const localStateFile = join(appConfigDir, "local.toml");
 
-// One-time bootstrap: the repo's ./config/web2d used to double as the whole config dir
-// (dev-only stand-in for the real system location). Seed the new system dir from it so
-// existing tuning survives the move; only when running from source (a packaged build has
-// no ./config/web2d to seed from). Gated on configFile, not the directory itself — Electron
-// creates appConfigDir on its own (it's also the default userData dir, holding Cache/
-// Cookies/etc.) well before this ever runs, so the directory alone can't signal "already migrated".
-seedConfigDirFromRepo();
+// macOS joins Linux on the XDG layout rather than ~/Library/Application Support.
+function userConfigHome(): string {
+	if (process.platform === "win32") return app.getPath("appData");
+	const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+	if (xdgConfigHome && isAbsolute(xdgConfigHome)) return xdgConfigHome;
+	return join(app.getPath("home"), ".config");
+}
 
-function seedConfigDirFromRepo(): void {
+// Must run before anything reads config.toml: loadConfig's read-modify-write would
+// otherwise quietly create a defaults-only one.
+export function ensureConfigFile(): void {
 	if (existsSync(configFile)) return;
-	const repoConfigDir = resolve(process.cwd(), "config", "web2d");
-	if (!existsSync(repoConfigDir)) return;
-	cpSync(repoConfigDir, appConfigDir, {
-		recursive: true,
-		filter: (src) => !src.endsWith(".DS_Store"),
-	});
-	log.info(`seeded config dir from ${color.dim(repoConfigDir)} -> ${color.dim(appConfigDir)}`);
+	throw new Error(
+		`Config file not found: ${configFile}\n\n` +
+			`Create ${appConfigDir} with a config.toml and models/<name>.toml ` +
+			`(the repo's config/web2d/ is a template to copy).`,
+	);
 }
 
 function readLocalStateSync(): Record<string, unknown> {

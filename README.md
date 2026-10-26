@@ -9,7 +9,7 @@ zoomed.
 
 Built with **Electron + Vite + TypeScript + Pixi.js + pixi-live2d-display +
 MediaPipe Tasks Vision**, plus two small Rust (napi-rs) modules for the Linux
-compositor integration. Package manager: **pnpm**.
+compositor integration. Package manager: **bun**.
 
 ## Platform support
 
@@ -27,8 +27,8 @@ compositors get the generic Electron behavior (the Hyprland-specific paths detec
 
 ## Requirements
 
-- Node.js 20+ and [pnpm](https://pnpm.io/)
-- **Linux only:** a Rust toolchain (for `pnpm build:native`),
+- Node.js 20+ and [bun](https://bun.com/)
+- **Linux only:** a Rust toolchain (for `bun run build:native`),
   `xdg-desktop-portal-hyprland` for global hotkeys, and a Hyprland session for
   the overlay window rules
 - A webcam — optional. Face tracking degrades gracefully: if the camera is
@@ -38,12 +38,12 @@ compositors get the generic Electron behavior (the Hyprland-specific paths detec
 ## Getting started
 
 ```bash
-pnpm install
-pnpm build:native   # Linux only — builds global_hotkey/ and overlay_hyprland/
-pnpm dev
+bun install
+bun run build:native   # Linux only — builds global_hotkey/ and overlay_hyprland/
+bun run dev
 ```
 
-`pnpm dev` builds the Electron shell, starts the Vite dev server, waits for it,
+`bun run dev` builds the Electron shell, starts the Vite dev server, waits for it,
 and launches Electron pointed at it.
 
 Then point it at a model — see [Configuration](#configuration). Until
@@ -55,7 +55,7 @@ The portal registers shortcut **ids**, not key combos, so the compositor decides
 the actual keys. Either let the app bind them for you:
 
 ```toml
-# <appData>/web2d/config.toml
+# <configHome>/web2d/config.toml
 hyprlandAutoBind = true
 ```
 
@@ -87,16 +87,16 @@ bind = CTRL ALT, R, global, web2d:recenter
   (live landmark mesh + gaze/mouth readout, for tuning), quit.
 
 Window geometry and the model's position/zoom persist automatically to
-`<appData>/web2d/local.toml`.
+`<configHome>/web2d/local.toml`.
 
 ## Configuration
 
-Settings are TOML files loaded at runtime from the OS-standard per-user config
-dir (`<appData>/web2d` — Roaming `AppData` on Windows, `~/Library/Application
-Support` on macOS, `$XDG_CONFIG_HOME`/`~/.config` on Linux), the same in dev and
-a packaged build. The project's `config/web2d/` is only a seed template: on
-first run, if that per-user dir doesn't exist yet, it's copied there; after
-that, edit the per-user dir directly (the repo copy is no longer read).
+Settings are TOML files loaded at runtime from `<configHome>/web2d`, where
+`<configHome>` is `$XDG_CONFIG_HOME` (if absolute) or `~/.config` on macOS and
+Linux, and Roaming `AppData` on Windows — the same in dev and a packaged build.
+Nothing is created for you: if `config.toml` is missing, the app shows an error
+naming the path and exits. Copy the project's `config/web2d/` there as a
+starting point; the app never reads the repo copy.
 
 **`config.toml`** — model-independent knobs plus `model`, the active model's name:
 
@@ -130,7 +130,7 @@ machine gets one profile per machine (e.g. `zero.toml` and `zero-linux.toml`).
 **`local.toml`** — per-machine volatile state (window geometry, live model
 transform). Gitignored; nothing in it is meant to be edited by hand.
 
-To add a model: create `<appData>/web2d/models/<name>.toml` with `location` and
+To add a model: create `<configHome>/web2d/models/<name>.toml` with `location` and
 `model`, set `model = "<name>"` in `config.toml`, and restart (or use the tray's
 "Reload config"). Gain entries and expressions are filled in automatically on
 load.
@@ -138,17 +138,18 @@ load.
 ## Scripts
 
 ```bash
-pnpm dev           # build shell + Vite + launch Electron (scripts/dev.mjs)
-pnpm dev:perf      # same, with NODE_ENV=production + GPU flags
-pnpm build         # native + typecheck + vite build (dist/) + main/preload (dist-electron/)
-pnpm build:native  # the two Rust napi modules (Linux)
-pnpm start         # run Electron against an existing build
-pnpm dev:renderer  # Vite only, in a plain browser (no Electron IPC, so no model loads)
-pnpm release       # production build, then package (scripts/release.mjs)
+bun run dev           # build shell + Vite + launch Electron (scripts/dev.mjs)
+bun run dev:perf      # same, with NODE_ENV=production + GPU flags
+bun run build         # native + typecheck + vite build (dist/) + main/preload (dist-electron/)
+bun run build:native  # the two Rust napi modules (Linux)
+bun run start         # run Electron against an existing build
+bun run dev:renderer  # Vite only, in a plain browser (no Electron IPC, so no model loads)
+bun run release       # production build, then package (scripts/release.mjs)
+bun test              # unit tests (test/*.test.ts)
 ```
 
-`pnpm exec tsc` typechecks without building — there's no linter and no test suite.
+`bunx tsc` typechecks without building — there's no linter.
 
-> Packaging (`pnpm release`) is unverified: the script assumes electron-builder,
+> Packaging (`bun run release`) is unverified: the script assumes electron-builder,
 > which isn't installed or configured yet. See the caveat comment in
 > `scripts/release.mjs`.

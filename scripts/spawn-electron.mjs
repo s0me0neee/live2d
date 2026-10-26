@@ -4,11 +4,11 @@ import { spawn } from "node:child_process";
 
 const NOISE = /Fontconfig warning|wayland_event_watcher|libwayland:/;
 
-// Spawns `pnpm exec electron <args>`, dropping the noisy boot/teardown lines (system
+// Spawns `bun run electron <args>`, dropping the noisy boot/teardown lines (system
 // fontconfig warnings + Chromium's wayland teardown spam) from stderr so the app's own
 // logs stay visible.
 export function spawnElectronFiltered(args, env) {
-	const electron = spawn("pnpm", ["exec", "electron", ...args], {
+	const electron = spawn("bun", ["run", "electron", ...args], {
 		stdio: ["inherit", "inherit", "pipe"],
 		env,
 	});

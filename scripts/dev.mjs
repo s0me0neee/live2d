@@ -34,7 +34,7 @@ async function waitForServer(url, tries = 100) {
 await run("node", ["scripts/build-electron.mjs"]);
 
 // 2. Vite dev server (serves the renderer + project-root assets: /model, /mediapipe).
-const vite = spawn("pnpm", ["exec", "vite", "--port", String(PORT), "--strictPort"], {
+const vite = spawn("bun", ["run", "vite", "--port", String(PORT), "--strictPort"], {
 	stdio: "inherit",
 });
 

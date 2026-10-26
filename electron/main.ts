@@ -1,6 +1,7 @@
 import {
 	app,
 	BrowserWindow,
+	dialog,
 	globalShortcut,
 	ipcMain,
 	Menu,
@@ -21,6 +22,7 @@ import { openFaceDebug, sendFaceDebugData } from "./face-debug-window";
 import type { FaceResult } from "../src/face-worker";
 import { createLogger, color } from "./log";
 import {
+	ensureConfigFile,
 	listModels,
 	loadConfig,
 	loadCursorLookSync,
@@ -165,7 +167,7 @@ ipcMain.handle("config:update", (_e, patch: DeepPartial<Config>) =>
 // The renderer reports the live model transform on each drag-stop / zoom. Persist it
 // debounced — the transform is Pixi-internal (unlike the OS window it has no AeroSpace
 // implication), so there's no reason to defer to quit, where a SIGTERM/SIGINT kill
-// (how `pnpm dev` stops) would never run will-quit and the last drag would be lost.
+// (how `bun run dev` stops) would never run will-quit and the last drag would be lost.
 let lastReportedPos: Pos | null = null;
 let posSaveTimer: ReturnType<typeof setTimeout> | undefined;
 ipcMain.on("pos:report", (_e, pos: Pos) => {
@@ -864,6 +866,18 @@ function createTray(): void {
 }
 
 app.whenReady().then(() => {
+	// After ready: on Linux, showErrorBox before ready only prints to stderr, and a
+	// packaged build has no terminal.
+	try {
+		ensureConfigFile();
+	} catch (e) {
+		const message = e instanceof Error ? e.message : String(e);
+		log.error(message);
+		dialog.showErrorBox("web2d: missing config", message);
+		app.exit(1);
+		return;
+	}
+
 	log.ok(`web2d ready ${color.gray(`(electron ${process.versions.electron}, node ${process.versions.node})`)}`);
 
 	session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
@@ -908,7 +922,7 @@ app.on("will-quit", () => {
 		savePosSync(lastReportedPos);
 	}
 	// Capture the final window geometry from the compositor (Wayland doesn't give it to
-	// Electron reliably). Note SIGTERM/SIGINT — how `pnpm dev` stops — skips will-quit;
+	// Electron reliably). Note SIGTERM/SIGINT — how `bun run dev` stops — skips will-quit;
 	// the debounced resize save in createWindow covers the geometry during the session.
 	clearTimeout(winSaveTimer);
 	stopCursorPoll();

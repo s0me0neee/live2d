@@ -1,5 +1,0 @@
-allowBuilds:
-  esbuild: true
-  koffi: true
-minimumReleaseAgeExclude:
-  - vite@8.1.3

@@ -14,6 +14,9 @@ export interface FaceResult {
 	// as the face-debug viewer — computing this is free since MediaPipe already
 	// produces it internally to derive the blendshapes.
 	landmarks: NormalizedLandmark[] | null;
+	// Camera capture time in ms. The rig's filter is timed by these rather than by when
+	// results arrive, which jitters with inference time and the render tick.
+	capturedAt: number;
 }
 
 export type FaceWorkerMessage =
@@ -89,6 +92,7 @@ async function run({ readable, detectFps }: FaceWorkerInit): Promise<void> {
 					blend,
 					matrix: res.facialTransformationMatrixes?.[0]?.data ?? null,
 					landmarks: res.faceLandmarks?.[0] ?? null,
+					capturedAt: frame.timestamp / 1000,
 				});
 			} finally {
 				frame.close();
